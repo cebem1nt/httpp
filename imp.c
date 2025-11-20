@@ -105,14 +105,14 @@ void http_parse_header(http_req_t* req, char* line)
     memcpy(name, line, name_len);
     name[name_len] = '\0';
 
-    char* body_start = delim_pos + 1;
-    ltrim(body_start);
+    char* value_start = delim_pos + 1;
+    ltrim(value_start);
 
-    char* body = strdup(body_start);
-    if (!body)
+    char* value = strdup(value_start);
+    if (!value)
         nomem();
 
-    http_header_t parsed = {name, body};
+    http_header_t parsed = {name, value};
     http_req_arr_append(req->headers, parsed);
 }
 
@@ -147,7 +147,7 @@ http_req_t* http_parse_request(char* raw)
 
     while (itr < end) {
         char* del_pos = strstr(itr, HTTP_DELIMETER);
-        if (!del_pos) 
+        if (!del_pos)
             break;
         
         size_t line_size = del_pos - itr;
@@ -162,6 +162,7 @@ http_req_t* http_parse_request(char* raw)
         itr = del_pos + HTTP_DELIMETER_SIZE;
     }
 
+    out->body = strdup(itr);
     return out;
 }
 
@@ -185,8 +186,12 @@ int main()
     for (size_t i = 0; i < parsed->headers->length; i++) {
         printf("Header %lu:\n", i);
         printf("   Name: %s\n", parsed->headers->arr[i].name);
-        printf("   Body: %s\n", parsed->headers->arr[i].body);
+        printf("  Value: %s\n", parsed->headers->arr[i].value);
     }
+
+    printf("\n--- Parsed body: ---\n");
+    printf("%s\n", parsed->body);
+    printf("----------------------\n");
 
     return 0;
 }

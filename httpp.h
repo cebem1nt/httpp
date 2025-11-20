@@ -13,7 +13,7 @@ typedef enum {
 
 typedef struct {
     char* name;
-    char* body;
+    char* value;
 } http_header_t;
 
 typedef struct {
