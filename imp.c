@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -14,16 +13,26 @@
 #define LINE_BUFSIZE 4096
 #define INITIAL_HEADERS_ARR_CAP 20
 
-#define MAX_ROUTE_LENGTH 100 /* Can and should be adjusted */
-#define MAX_METHOD_LENGTH 10 + 1
-#define VERISON_BUFSIZE 10 + 1
+#define MAX_METHOD_LENGTH (10 + 1)
+#define VERISON_BUFSIZE (10 + 1)
 
+#define nomem() do { fprintf(stderr, "No memory, see ya!\n"); exit(1); } while (0)
 #define http_string_to_method(s) (strcmp(s, "GET")    == 0 ? 0 : \
                                   strcmp(s, "POST")   == 0 ? 1 : \
                                   strcmp(s, "DELETE") == 0 ? 2 : -1)
 
-#define nomem() do { fprintf(stderr, "No memory, see ya!\n"); exit(1); } while (0)
-#define ltrim(str) while(*(str) && isspace(*(str))) { (str)++; }
+#define ltrim(str)                     \
+    while(*(str) && isspace(*(str))) { \
+        (str)++;                       \
+    }
+
+#define rtrim(str) do {                     \
+    char* end = (str) + strlen(str) - 1;    \
+    while (end >= (str) && isspace(*end)) { \
+        *end = '\0';                        \
+        --end;                              \
+    }                                       \
+    } while (0)
 
 static inline void* emalloc(size_t size) 
 {
@@ -37,20 +46,20 @@ static inline void* emalloc(size_t size)
 static inline void* erealloc(void* ptr, size_t size) 
 {
     void* new_ptr = realloc(ptr, size);
-    if (!ptr)
+    if (!new_ptr)
         nomem();
 
     return ptr;
 } 
 
-static void chop_until(char c, char** src, char* dest, size_t dest_len) 
+static void chop_until(char c, char** src, char* dest, size_t n) 
 {
     char* pos = strchr(*src, c);
     if (!pos)
         return;
 
     size_t chopped_size = pos - *src;
-    if (chopped_size >= dest_len)
+    if (chopped_size >= n)
         return;
 
     memcpy(dest, *src, chopped_size);
@@ -59,12 +68,29 @@ static void chop_until(char c, char** src, char* dest, size_t dest_len)
     *src = pos + 1;
 }
 
+static char* dchop_until(char c, char** src) 
+{
+    char* pos = strchr(*src, c);
+    if (!pos)
+        return NULL;
+
+    size_t chopped_size = pos - *src;
+    char* dest = emalloc(chopped_size + 1);
+
+    memcpy(dest, *src, chopped_size);
+    dest[chopped_size] = '\0';
+
+    *src = pos + 1;
+    return dest;
+}
+
 const char* http_method_to_string(http_method_t m) 
 {
     switch (m) {
         case GET: return "GET";
         case POST: return "POST"; 
         case DELETE: return "DELETE"; 
+        default: return "UNKNOWN";
     }
 }        
 
@@ -80,18 +106,18 @@ http_req_t* http_req_new()
     return new;
 }
 
-void http_req_arr_append(http_headers_arr_t* hs, http_header_t header) 
+void http_headers_append(http_headers_arr_t* hs, http_header_t header) 
 {
     if (hs->length >= hs->capacity) {
-        size_t new_cap = (hs->capacity * 2) * sizeof(http_header_t);
-        hs->arr = erealloc(hs->arr, new_cap);
+        size_t new_cap = hs->capacity * 2;
+        hs->arr = erealloc(hs->arr, new_cap * sizeof(http_header_t));
         hs->capacity = new_cap;
     }
 
     hs->arr[hs->length++] = header;
 }
 
-void http_parse_header(http_req_t* req, char* line) 
+void http_parse_header(http_headers_arr_t* hs, char* line) 
 {
     char* delim_pos = strchr(line, ':');
     if (!delim_pos)
@@ -112,27 +138,30 @@ void http_parse_header(http_req_t* req, char* line)
     if (!value)
         nomem();
 
-    http_header_t parsed = {name, value};
-    http_req_arr_append(req->headers, parsed);
+    http_headers_append(hs, (http_header_t){name, value});
 }
 
 void http_parse_start_line(char** itr, http_req_t* dest) 
 {
     char method_buf[MAX_METHOD_LENGTH];
-    char route_buf[MAX_ROUTE_LENGTH];
     char version_buf[VERISON_BUFSIZE];
 
     ltrim(*itr);
 
-    chop_until(' ',  itr, method_buf, MAX_METHOD_LENGTH);
-    chop_until(' ',  itr, route_buf, MAX_ROUTE_LENGTH);
-    chop_until('\r', itr, version_buf, VERISON_BUFSIZE);
+    chop_until(' ', itr, method_buf, MAX_METHOD_LENGTH);
+    char* route = dchop_until(' ', itr);
+
+    ltrim(*itr) // Route might have extra spaces at the bginning, for our implementation thats fine
+    chop_until('\n', itr, version_buf, VERISON_BUFSIZE);
+    rtrim(version_buf);
 
     dest->method = http_string_to_method(method_buf);
-    dest->route = strdup(route_buf); // Hmmmm
-
-    assert(strcmp(version_buf, HTTP_VERSION) == 0 && "Unsupported protocol version");
-    ltrim(*itr); // remove \n left after version
+    dest->route = route;
+    
+    if (strcmp(version_buf, HTTP_VERSION) != 0) {
+        fprintf(stderr, "Unsupported protocol version\n");
+        exit(1);
+    }
 }
 
 http_req_t* http_parse_request(char* raw) 
@@ -151,14 +180,13 @@ http_req_t* http_parse_request(char* raw)
             break;
         
         size_t line_size = del_pos - itr;
-        
         if (line_size >= LINE_BUFSIZE)
-            return NULL; // Idk, inform user?
+            return NULL;
         
         memcpy(line, itr, line_size);
         line[line_size] = '\0';
 
-        http_parse_header(out, line);
+        http_parse_header(out->headers, line);
         itr = del_pos + HTTP_DELIMETER_SIZE;
     }
 
@@ -185,8 +213,8 @@ int main()
     printf("Parsed headers length: %lu\n", parsed->headers->length);
     for (size_t i = 0; i < parsed->headers->length; i++) {
         printf("Header %lu:\n", i);
-        printf("   Name: %s\n", parsed->headers->arr[i].name);
-        printf("  Value: %s\n", parsed->headers->arr[i].value);
+        printf("   Name: :%s:\n", parsed->headers->arr[i].name);
+        printf("  Value: :%s:\n", parsed->headers->arr[i].value);
     }
 
     printf("\n--- Parsed body: ---\n");
