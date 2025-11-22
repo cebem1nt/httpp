@@ -1,6 +1,5 @@
 #include <stdio.h>
-
-#define LIBPTTH_IMPLEMENTATION
+#define HTTPP_IMPLEMENTATION
 #include "httpp.h"
 
 void print(http_req_t* parsed) 

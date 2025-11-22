@@ -5,30 +5,25 @@
 
 #include <stddef.h>
 #include <ctype.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#define HTTP_DELIMETER "\r\n"
-#define HTTP_DELIMETER_SIZE 2
-#define HTTP_VERSION "HTTP/1.1"
 
 #define _HTTPP_LINE_BUFSIZE 4096
 #define _HTTPP_INITIAL_HEADERS_ARR_CAP 20
 
 #define _HTTPP_MAX_METHOD_LENGTH (10 + 1)
-#define _HTTPP_VERISON_BUFSIZE (10 + 1)
+#define _HTTPP_VERSION_BUFSIZE (10 + 1)
 
-#define nomem() do { fprintf(stderr, "No memory, see ya!\n"); exit(1); } while (0)
-#define http_string_to_method(s) (strcmp(s, "GET")    == 0 ? 0 : \
-                                  strcmp(s, "POST")   == 0 ? 1 : \
-                                  strcmp(s, "DELETE") == 0 ? 2 : -1)
+#define httpp_string_to_method(s) (strcmp(s, "GET")    == 0 ? 0 : \
+                                   strcmp(s, "POST")   == 0 ? 1 : \
+                                   strcmp(s, "DELETE") == 0 ? 2 : -1)
 
 typedef enum {
     GET,
     POST,
-    DELETE
+    DELETE,
+    UNKNOWN = -1
 } http_method_t;
 
 typedef struct {
@@ -57,8 +52,12 @@ int httpp_parse_header(http_headers_arr_t* hs, char* line);
 void httpp_headers_append(http_headers_arr_t* hs, http_header_t header);
 void httpp_req_free(http_req_t* req);
 
+#ifdef HTTPP_IMPLEMENTATION
+#define HTTP_DELIMITER "\r\n"
+#define HTTP_DELIMITER_SIZE 2
+#define HTTP_VERSION "HTTP/1.1"
 
-#ifdef LIBPTTH_IMPLEMENTATION
+#define nomem() do { fprintf(stderr, "No memory, see ya!\n"); exit(1); } while (0)
 #define ltrim(str)                     \
     while(*(str) && isspace(*(str))) { \
         (str)++;                       \
@@ -87,7 +86,7 @@ static inline void* erealloc(void* ptr, size_t size)
     if (!new_ptr)
         nomem();
 
-    return ptr;
+    return new_ptr;
 } 
 
 static int chop_until(char c, char** src, char* dest, size_t n) 
@@ -141,6 +140,8 @@ http_req_t* httpp_req_new()
     out->headers->arr = (http_header_t*) emalloc(sizeof(http_header_t) * _HTTPP_INITIAL_HEADERS_ARR_CAP);
     out->headers->capacity = _HTTPP_INITIAL_HEADERS_ARR_CAP;
     out->headers->length = 0;
+    out->route = NULL;
+    out->body = NULL;
 
     return out;
 }
@@ -155,6 +156,7 @@ void httpp_req_free(http_req_t* req)
     }
 
     free(req->headers->arr);
+    free(req->headers);
     free(req->route);
     free(req->body);
     free(req);
@@ -199,32 +201,32 @@ int httpp_parse_header(http_headers_arr_t* hs, char* line)
 static int http_parse_start_line(char** itr, http_req_t* dest) 
 {
     char method_buf[_HTTPP_MAX_METHOD_LENGTH];
-    char version_buf[_HTTPP_VERISON_BUFSIZE];
+    char version_buf[_HTTPP_VERSION_BUFSIZE];
+    char* route;
 
     ltrim(*itr);
 
     if (chop_until(' ', itr, method_buf, _HTTPP_MAX_METHOD_LENGTH) != 0)
         return 1; 
 
-    ltrim(*itr) // Route might have extra spaces at the bginning, for our implementation thats fine
-    char* route = dchop_until(' ', itr);
+    ltrim(*itr); // Route might have extra spaces at the bginning, for our implementation thats fine
+    if ((route = dchop_until(' ', itr)) == NULL)
+        return 1;
 
     ltrim(*itr);
-    if (chop_until('\n', itr, version_buf, _HTTPP_VERISON_BUFSIZE) != 0) {
+    if (chop_until('\n', itr, version_buf, _HTTPP_VERSION_BUFSIZE) != 0) {
         free(route);
         return 1;
     }
 
     rtrim(version_buf);
-
-    dest->method = (http_method_t) http_string_to_method(method_buf);
-    dest->route = route;
-    
     if (strcmp(version_buf, HTTP_VERSION) != 0) {
         free(route);
         return 1;
     }
 
+    dest->method = (http_method_t) httpp_string_to_method(method_buf);
+    dest->route = route;
     return 0;
 }
 
@@ -236,40 +238,46 @@ http_req_t* httpp_parse_request(char* raw)
     char* end = raw + strlen(raw);
     char  line[_HTTPP_LINE_BUFSIZE];
 
-    if (http_parse_start_line(&itr, out) != 0)
+    if (http_parse_start_line(&itr, out) != 0) {
+        httpp_req_free(out);
         return NULL;
+    }
 
     while (itr < end) {
-        char* del_pos = strstr(itr, HTTP_DELIMETER);
+        char* del_pos = strstr(itr, HTTP_DELIMITER);
         if (!del_pos)
             break;
         
         size_t line_size = del_pos - itr;
         if (line_size == 0) {
-            itr = del_pos + HTTP_DELIMETER_SIZE;
+            itr = del_pos + HTTP_DELIMITER_SIZE;
             break;
         }
 
         if (line_size >= _HTTPP_LINE_BUFSIZE) {
-            free(out);
+            httpp_req_free(out);
             return NULL;
         }
         
         memcpy(line, itr, line_size);
         line[line_size] = '\0';
 
-        if (httpp_parse_header(out->headers, line) != 0)
+        if (httpp_parse_header(out->headers, line) != 0) {
+            httpp_req_free(out);
             return NULL;
+        }
 
-        itr = del_pos + HTTP_DELIMETER_SIZE;
+        itr = del_pos + HTTP_DELIMITER_SIZE;
     }
 
     // TODO, there is a thing called chunked transfer, which is 
     // definitely not handled well by this parser
     out->body = strdup(itr);
-    if (!out->body)
+    if (!out->body) {
+        httpp_req_free(out);
         return NULL;
+    }
 
     return out;
 }
-#endif // LIBPTTH_IMPLEMENTATION
+#endif // HTTPP_IMPLEMENTATION
