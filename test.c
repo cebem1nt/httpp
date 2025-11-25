@@ -1,8 +1,9 @@
 #include <stdio.h>
+
 #define HTTPP_IMPLEMENTATION
 #include "httpp.h"
 
-void print(http_req_t* parsed) 
+void print(httpp_req_t* parsed) 
 {
     if (parsed == NULL) {
         printf("Couldn't parse!\n");
@@ -35,7 +36,7 @@ int main()
     "\r\n"
     "{\"name\":\"Widget\",\"quantity\":10,\"price\":9.99}";
 
-    http_req_t* parsed = httpp_parse_request(req1);
+    httpp_req_t* parsed = httpp_parse_request(req1);
     print(parsed);
     httpp_req_free(parsed);
 
@@ -66,6 +67,19 @@ int main()
 
     parsed = httpp_parse_request(req3);
     print(parsed);
+
+    httpp_res_t* res = httpp_res_new();
+    
+    res->code = 200;
+    httpp_headers_add(res->headers, "Host", "idk.me.com");
+    httpp_headers_add(res->headers, "Home", "pkeofkwekgfwktokwt9wt293430592304");
+    httpp_headers_add(res->headers, "SOmethin", "afkofkeokfoekfo");
+    httpp_res_set_body(res, "{\"hello\": 123}\n");
+
+    char* raw = httpp_res_to_raw(res);
+    printf("-----------\n");
+    printf("%s", raw);
+    printf("-----------\n");
 
     return 0;
 }
