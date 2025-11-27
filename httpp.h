@@ -1,6 +1,12 @@
 /*
  * Tiny header only http parser library for
  * http 1/1 version (enums don't respect your namespace much, sorry)
+ * Pipelined requests are not supported because nobody realy cares about them 
+ * (https://en.wikipedia.org/wiki/HTTP_pipelining#Implementation_status)
+ * 
+ * Chunked transfer is not really supported
+ *
+ * TODO Folded headers nor handled
  */
 
 #include <stddef.h>
@@ -9,8 +15,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define HTTPP_LINE_BUFSIZE 4096
+#define HTTPP_LINE_BUFSIZE 4096 /* A buffer for "name: value" header parsing */
 #define HTTPP_INITIAL_HEADERS_ARR_CAP 20
+#define HTTPP_HEADERS_ARR_LIMIT -1
 
 #define HTTPP_MAX_METHOD_LENGTH (10 + 1)
 #define HTTPP_VERSION_BUFSIZE (10 + 1)
@@ -43,11 +50,28 @@ typedef enum {
     Created,
     Accepted,
 
+    Multiple_Choices = 300,
+    Moved_Permanently,
+    Found,
+    See_Other,
+    Not_Modified,
+    Use_Proxy,
+    Temporary_Redirect = 307,
+    Permanent_Redirect,
+
     Bad_Request = 400,
     Unauthorized,
     Payment_Required, // Ahahaha
-    Forbiden,
+    Forbidden,
     Not_Found,
+
+    Internal_Server_Error = 500,
+    Not_Implemented,
+    Bad_Gateway,
+    Service_Unavailable,
+    Gateway_Timeout,
+    HTTP_Version_Not_Supported,
+
     Unspecified = -1
 } httpp_status_t;
 
@@ -76,29 +100,32 @@ typedef struct {
 } httpp_res_t;
 
 const char* httpp_method_to_string(httpp_method_t m);
+const char* httpp_status_to_string(httpp_status_t s);
+
 httpp_req_t* httpp_req_new();
+void httpp_req_free(httpp_req_t* req);
 httpp_req_t* httpp_parse_request(char* raw);
 
-int httpp_parse_header(httpp_headers_arr_t* hs, char* line);
-int httpp_headers_append(httpp_headers_arr_t* hs, httpp_header_t header);
-int httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* value);
+httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line);
+
+httpp_headers_arr_t* httpp_headers_arr_new();
 void httpp_headers_arr_free(httpp_headers_arr_t* hs);
-void httpp_req_free(httpp_req_t* req);
+httpp_header_t* httpp_headers_append(httpp_headers_arr_t* hs, httpp_header_t header);
+httpp_header_t* httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* value); // stdrup and httpp_headers_append
 
 httpp_res_t* httpp_res_new();
+int httpp_res_set_body(httpp_res_t* res, char* body); // strdup and res->body = dupped
 void httpp_res_free(httpp_res_t* res);
-
-int httpp_res_set_body(httpp_res_t* res, char* body);
 char* httpp_res_to_raw(httpp_res_t* res);
 
+#define HTTPP_IMPLEMENTATION
 #ifdef HTTPP_IMPLEMENTATION
 
 #define trim(str) do { ltrim(str); rtrim(str); } while (0)
 
 #define ltrim(str) do {                     \
-    char* __str = (str);                    \
-    while(*__str && isspace(*__str)) {      \
-        __str++;                            \
+    while(*(str) && isspace(*(str))) {      \
+        (str)++;                            \
     }                                       \
     } while (0)
 
@@ -159,26 +186,42 @@ const char* httpp_method_to_string(httpp_method_t m)
 const char* httpp_status_to_string(httpp_status_t s) 
 {
     switch (s) {
-        case Continue:             return "Continue";
-        case Switching_Protocols:  return "Switching Protocols";
+        case Continue:                   return "Continue";
+        case Switching_Protocols:        return "Switching Protocols";
 
-        case Ok:                   return "OK";
-        case Created:              return "Created";
-        case Accepted:             return "Accepted";
+        case Ok:                         return "OK";
+        case Created:                    return "Created";
+        case Accepted:                   return "Accepted";
 
-        case Bad_Request:          return "Bad Request";
-        case Unauthorized:         return "Unauthorized";
-        case Payment_Required:     return "Payment Required";
-        case Forbiden:             return "Forbidden";
-        case Not_Found:            return "Not Found";
+        case Multiple_Choices:           return "Multiple Choices";
+        case Moved_Permanently:          return "Moved Permanently";
+        case Found:                      return "Found";
+        case See_Other:                  return "See Other";
+        case Not_Modified:               return "Not Modified";
+        case Use_Proxy:                  return "Use Proxy";
+        case Temporary_Redirect:         return "Temporary Redirect";
+        case Permanent_Redirect:         return "Permanent Redirect";
 
-        case Unspecified:  
-        default:                   return "Unspecified";
+        case Bad_Request:                return "Bad Request";
+        case Unauthorized:               return "Unauthorized";
+        case Payment_Required:           return "Payment Required";
+        case Forbidden:                  return "Forbidden";
+        case Not_Found:                  return "Not Found";
+
+        case Internal_Server_Error:      return "Internal Server Error";
+        case Not_Implemented:            return "Not Implemented";
+        case Bad_Gateway:                return "Bad Gateway";
+        case Service_Unavailable:        return "Service Unavailable";
+        case Gateway_Timeout:            return "Gateway Timeout";
+        case HTTP_Version_Not_Supported: return "HTTP Version Not Supported";
+
+        case Unspecified:
+        default:                         return "Unspecified";
     }
 }
 
 
-httpp_headers_arr_t* httpp_headers_arr_new() 
+httpp_headers_arr_t* httpp_headers_arr_new()
 {
     httpp_headers_arr_t* out = (httpp_headers_arr_t*) malloc(sizeof(httpp_headers_arr_t));
 
@@ -232,31 +275,31 @@ void httpp_req_free(httpp_req_t* req)
     free(req);
 }
 
-int httpp_headers_append(httpp_headers_arr_t* hs, httpp_header_t header)
+httpp_header_t* httpp_headers_append(httpp_headers_arr_t* hs, httpp_header_t header)
 {
     if (hs->length >= hs->capacity) {
         size_t new_cap = hs->capacity * 2;
         if (new_cap <= hs->capacity) // Doesn't free on failure. Make a note about it
-            return HTTPP_ERRMEMRY;
+            return NULL;
 
         hs->arr = (httpp_header_t*) realloc(hs->arr, new_cap * sizeof(httpp_header_t));
         if (!hs->arr)
-            return HTTPP_ERRMEMRY;
+            return NULL;
         
         hs->capacity = new_cap;
     }
 
     if (!header.name || !header.value) 
-        return HTTPP_ERRLOGIC;
+        return NULL;
 
     hs->arr[hs->length++] = header;
-    return 0;
+    return &hs->arr[hs->length];
 }
 
-int httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* value) 
+httpp_header_t* httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* value)
 {
     if (!name || !value) 
-        return HTTPP_ERRLOGIC;
+        return NULL;
 
     httpp_header_t h = {
         strdup(name), 
@@ -266,19 +309,19 @@ int httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* value)
     return httpp_headers_append(hs, h);
 }
 
-int httpp_parse_header(httpp_headers_arr_t* hs, char* line) 
+httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line)
 {
     char* delim_pos = strchr(line, ':');
     if (!delim_pos)
-        return HTTPP_ERRLOGIC;
+        return NULL;
     
     size_t name_len = (delim_pos - line);
     if (name_len == 0)
-        return HTTPP_ERRLOGIC;
+        return NULL;
     
     char* name = (char*) malloc(name_len + 1);
     if (!name)
-        return HTTPP_ERRMEMRY;
+        return NULL;
 
     memcpy(name, line, name_len);
     name[name_len] = '\0';
@@ -289,12 +332,9 @@ int httpp_parse_header(httpp_headers_arr_t* hs, char* line)
 
     char* value = strdup(value_start);
     if (!value)
-        return HTTPP_ERRMEMRY;
-
-    if (httpp_headers_append(hs, (httpp_header_t){name, value}) != 0)
-        return HTTPP_ERRMEMRY;
-
-    return 0;
+        return NULL;
+    
+    return httpp_headers_append(hs, (httpp_header_t){name, value});
 }
 
 static int parse_start_line(char** itr, httpp_req_t* dest) 
@@ -317,7 +357,7 @@ static int parse_start_line(char** itr, httpp_req_t* dest)
         return HTTPP_ERRDEFLT;
     }
 
-    trim(version_buf);
+    rtrim(version_buf);
     if (strcmp(version_buf, HTTPP_SUPPORTED_VERSION) != 0) {
         free(route);
         return HTTPP_ERRDEFLT;
@@ -360,16 +400,19 @@ httpp_req_t* httpp_parse_request(char* raw)
         memcpy(line, itr, line_size);
         line[line_size] = '\0';
 
-        if (httpp_parse_header(out->headers, line) != 0) {
+        if (httpp_parse_header(out->headers, line) == NULL) {
             httpp_req_free(out);
+            return NULL;
+        }
+
+        if (HTTPP_HEADERS_ARR_LIMIT != -1 && out->headers->length >= HTTPP_HEADERS_ARR_LIMIT) {
+            httpp_req_free(out); // Limit reached
             return NULL;
         }
 
         itr = del_pos + _HTTP_DELIMITER_SIZE;
     }
 
-    // TODO, there is a thing called chunked transfer, which is 
-    // definitely not handled well by this parser
     out->body = strdup(itr);
     if (!out->body) {
         httpp_req_free(out);
@@ -417,7 +460,7 @@ char* httpp_res_to_raw(httpp_res_t* res)
     if (res == NULL || res->headers == NULL)
         return NULL; 
 
-    if (res->code == -1)
+    if (res->code == -1 || (int) res->code > 999)
         return NULL;
 
     const char* status_msg = httpp_status_to_string(res->code);
@@ -434,7 +477,7 @@ char* httpp_res_to_raw(httpp_res_t* res)
         if (!header.name || !header.value)
             continue;
 
-        out_size += strlen(header.name) + 2 // :
+        out_size += strlen(header.name) + 2 // ": "
                   + strlen(header.value) 
                   + _HTTP_DELIMITER_SIZE;
     }
