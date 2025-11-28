@@ -10,7 +10,6 @@
  */
 
 #include <stddef.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,10 +29,6 @@
 #define httpp_string_to_method(s) (strcmp(s, "GET")    == 0 ? 0 : \
                                    strcmp(s, "POST")   == 0 ? 1 : \
                                    strcmp(s, "DELETE") == 0 ? 2 : -1)
-
-#define HTTPP_ERRMEMRY  3
-#define HTTPP_ERRLOGIC  2
-#define HTTPP_ERRDEFLT  1
 
 typedef enum {
     GET,
@@ -118,34 +113,41 @@ int httpp_res_set_body(httpp_res_t* res, char* body); // strdup and res->body = 
 void httpp_res_free(httpp_res_t* res);
 char* httpp_res_to_raw(httpp_res_t* res);
 
+#define HTTPP_IMPLEMENTATION
 #ifdef HTTPP_IMPLEMENTATION
 
-#define trim(str) do { ltrim(str); rtrim(str); } while (0)
-
-#define ltrim(str) do {                     \
-    while(*(str) && isspace(*(str))) {      \
-        (str)++;                            \
-    }                                       \
+#define ltrim(str) do {                                                         \
+    while (*(str) && *(str) == ' ' || *(str) == '\r' || *(str) == '\n') {       \
+        (str)++;                                                                \
+    }                                                                           \
     } while (0)
 
 
-#define rtrim(str) do {                     \
-    char* __str = (str);                    \
-    char* end = __str + strlen(__str) - 1;  \
-    while (end >= __str && isspace(*end)) { \
-        *end-- = '\0';                      \
-    }                                       \
+#define lltrim(str, len) do {                                                   \
+    while (*(str) && *(str) == ' ' || *(str) == '\r' || *(str) == '\n') {       \
+        (str)++;                                                                \
+        (len)--;                                                                \
+    }                                                                           \
     } while (0)
+
+#define rtrim(str, len) do {                                                \
+    char* __str = (str);                                                    \
+    char* end = __str + len;                                                \
+    while (end >= __str && *end == ' ' || *end == '\r' || *end == '\n')  {  \
+        *end-- = '\0';                                                      \
+        len--;                                                              \
+    }                                                                       \
+} while (0)
 
 static int chop_until(char c, char** src, char* dest, size_t n) 
 {
     char* pos = strchr(*src, c);
     if (!pos)
-        return HTTPP_ERRDEFLT;
+        return 1;
 
     size_t chopped_size = pos - *src;
     if (chopped_size >= n)
-        return HTTPP_ERRDEFLT;
+        return 1;
 
     memcpy(dest, *src, chopped_size);
     dest[chopped_size] = '\0';
@@ -324,10 +326,10 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line)
 
     memcpy(name, line, name_len);
     name[name_len] = '\0';
-    trim(name);
+    ltrim(name);
 
     char* value_start = delim_pos + 1;
-    trim(value_start);
+    ltrim(value_start);
 
     char* value = strdup(value_start);
     if (!value)
@@ -344,24 +346,24 @@ static int parse_start_line(char** itr, httpp_req_t* dest)
 
     ltrim(*itr);
     if (chop_until(' ', itr, method_buf, HTTPP_MAX_METHOD_LENGTH) != 0)
-        return HTTPP_ERRDEFLT; 
+        return 1; 
 
     ltrim(*itr); // Route might have extra spaces at the bginning, for our implementation thats fine
     if ((route = dchop_until(' ', itr)) == NULL)
-        return HTTPP_ERRDEFLT;
+        return 1;
 
     ltrim(*itr);
-    if (chop_until('\n', itr, version_buf, HTTPP_VERSION_BUFSIZE) != 0) {
+    if (chop_until('\r', itr, version_buf, HTTPP_VERSION_BUFSIZE) != 0) {
         free(route);
-        return HTTPP_ERRDEFLT;
+        return 1;
     }
 
-    rtrim(version_buf);
     if (strcmp(version_buf, HTTPP_SUPPORTED_VERSION) != 0) {
         free(route);
-        return HTTPP_ERRDEFLT;
+        return 1;
     }
 
+    ltrim(*itr); // remove \n left after version
     dest->method = (httpp_method_t) httpp_string_to_method(method_buf);
     dest->route = route;
     return 0;

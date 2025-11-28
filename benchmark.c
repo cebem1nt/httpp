@@ -21,7 +21,7 @@
 "Cookie: name=wookie\r\n" \
 "\r\n"
 
-#define ITERATIONS 1000000
+#define ITERATIONS 10000000
 
 double now_seconds(void) 
 {

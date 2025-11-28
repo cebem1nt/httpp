@@ -50,23 +50,25 @@ int main()
     "X-Feature-Flags: ,enable-new, ,\r\n"
     "\r\n"
     "{\"name\":\"SpicyWidget\",\"quantity\":-1,\"price\":9.9900,\"tags\":[\"hot\",\"ßpecial\",\"null\",null],\"meta\":{\"note\":\"line1\\nline2\\r\\nline3\",\"empty\":\"\",\"unicode\":\"🔥🚀\",\"quote_test\":\"She said: \\\"Spicy!\\\"\"}}";
-
+    
     parsed = httpp_parse_request(req2);
     print(parsed);
     httpp_req_free(parsed);
 
     char* req3 = 
     "POST /api/items HTTP/1.1\r\n"
-    "Host: api.example.com\r\n"
-    "User-Agent: MyClient/1.0\r\n"
-    "Content-Type: application/json; charset=utf-8\r\n"
-    "Content-Length: 106\r\n"
-    "X-Trace-ID: ;;--TRACE--;;\r\n"
-    "X-Feature-Flags: ,enable-new, ,\r\n"
+    "  Host: api.example.com\r\n"
+    "   User-Agent  : MyClient/1.0\r\n"
+    "  Content-Type: application/json; charset=utf-8\r\n"
+    "    Content-Length: 106\r\n"
+    "  X-Trace-ID: ;;--TRACE--;;\r\n"
+    "   X-Feature-Flags: ,enable-new, ,\r\n"
     "\r\n";
 
+    printf("--- req3 ---\n");
     parsed = httpp_parse_request(req3);
     print(parsed);
+    printf("--- end ---\n");
 
     httpp_res_t* res = httpp_res_new();
     
