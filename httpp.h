@@ -101,7 +101,7 @@ httpp_req_t* httpp_req_new();
 void httpp_req_free(httpp_req_t* req);
 httpp_req_t* httpp_parse_request(char* raw);
 
-httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line);
+httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line, size_t content_len);
 
 httpp_headers_arr_t* httpp_headers_arr_new();
 void httpp_headers_arr_free(httpp_headers_arr_t* hs);
@@ -123,7 +123,7 @@ char* httpp_res_to_raw(httpp_res_t* res);
     } while (0)
 
 
-#define lltrim(str, len) do {                                                   \
+#define ltrim_buf(str, len) do {                                                \
     while (*(str) && *(str) == ' ' || *(str) == '\r' || *(str) == '\n') {       \
         (str)++;                                                                \
         (len)--;                                                                \
@@ -310,31 +310,39 @@ httpp_header_t* httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* val
     return httpp_headers_append(hs, h);
 }
 
-httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line)
+httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line, size_t content_len)
 {
-    char* delim_pos = strchr(line, ':');
-    if (!delim_pos)
+    // RFC says that header starting with whitespace should be rejected.
+    if (*line == ' ' || *line == '\r' || *line == '\n')
         return NULL;
-    
-    size_t name_len = (delim_pos - line);
-    if (name_len == 0)
+
+    char* colon = (char*) memchr(line, ':', content_len);
+    if (!colon)
         return NULL;
-    
-    char* name = (char*) malloc(name_len + 1);
+
+    size_t name_len = colon - line;
+
+    char* name = (char*) malloc(name_len);
     if (!name)
         return NULL;
-
+    
     memcpy(name, line, name_len);
     name[name_len] = '\0';
-    ltrim(name);
 
-    char* value_start = delim_pos + 1;
-    ltrim(value_start);
+    char* value_start = colon + 1;
+    size_t value_len = content_len - name_len-1;
 
-    char* value = strdup(value_start);
-    if (!value)
+    ltrim_buf(value_start, value_len);
+
+    char* value = (char*) malloc(value_len);
+    if (!value) {
+        free(name);
         return NULL;
-    
+    }
+
+    memcpy(value, value_start, value_len);
+    value[value_len] = '\0';
+
     return httpp_headers_append(hs, (httpp_header_t){name, value});
 }
 
@@ -375,7 +383,6 @@ httpp_req_t* httpp_parse_request(char* raw)
 
     char* itr = raw;
     char* end = raw + strlen(raw);
-    char  line[HTTPP_LINE_BUFSIZE];
 
     if (parse_start_line(&itr, out) != 0) {
         httpp_req_free(out);
@@ -397,11 +404,8 @@ httpp_req_t* httpp_parse_request(char* raw)
             httpp_req_free(out);
             return NULL;
         }
-        
-        memcpy(line, itr, line_size);
-        line[line_size] = '\0';
 
-        if (httpp_parse_header(out->headers, line) == NULL) {
+        if (httpp_parse_header(out->headers, itr, line_size) == NULL) {
             httpp_req_free(out);
             return NULL;
         }
