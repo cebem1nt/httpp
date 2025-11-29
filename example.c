@@ -1,9 +1,3 @@
-# httpp
-Tiny, simple, yet useful header only dynamic HTTP/1.1 requests parser for C.
-
-## API
-
-```c
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -47,19 +41,3 @@ int main()
     httpp_res_free(response); // Free response structure
     free(raw); // Free composed raw response 
 }
-```
-
-## Benchmark
-All benchmarks were compiled with -O3 flag using gcc _15.2.1 20251112_. Benchmarks were running on a Ryzen 7 with 4.79GHz peek frequency. The code can be found [here](./bench.c). Same benchmark was adapted for http-parser. Results of each one is the average of 5 runs
-
-![Elapsed time](./elapsed.svg)
-
-| http-parser |   httpp     | picohttpparser |
-| ----------- | ----------- | -------------- |
-| `5.344527s` | `3.058964s` |   `2.005615s`  |
-
-![Requests per second](./requests.svg)
-
-|  http-parser  |    httpp      | picohttpparser |
-| ------------- | ------------- | -------------- |
-| `1871702.306` | `3269700.736` |  `4986831.824` |

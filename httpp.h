@@ -4,8 +4,7 @@
  * Pipelined requests are not supported because nobody realy cares about them 
  * (https://en.wikipedia.org/wiki/HTTP_pipelining#Implementation_status)
  * 
- * Chunked transfer is not really supported
- *
+ * TODO Chunked transfer is not really supported
  * TODO Folded headers aren't handled. 
  */
 
@@ -98,18 +97,26 @@ const char* httpp_status_to_string(httpp_status_t s);
 
 httpp_req_t* httpp_req_new();
 void httpp_req_free(httpp_req_t* req);
-httpp_req_t* httpp_parse_request(char* raw);
 
+httpp_req_t* httpp_parse_request(char* raw);
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line, size_t content_len);
 
 httpp_headers_arr_t* httpp_headers_arr_new();
+httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header);
+httpp_header_t* httpp_headers_arr_add(httpp_headers_arr_t* hs, char* name, char* value); // stdrup and httpp_headers_arr_append
+httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
 void httpp_headers_arr_free(httpp_headers_arr_t* hs);
-httpp_header_t* httpp_headers_append(httpp_headers_arr_t* hs, httpp_header_t header);
-httpp_header_t* httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* value); // stdrup and httpp_headers_append
 
 httpp_res_t* httpp_res_new();
-void httpp_res_free(httpp_res_t* res);
+int httpp_res_set_body(httpp_res_t* res, char* body); // strdup body and set it
 char* httpp_res_to_raw(httpp_res_t* res);
+void httpp_res_free(httpp_res_t* res);
+
+#define httpp_add_header(req_or_res, name, value) \
+    (httpp_headers_arr_add((req_or_res)->headers, name, value))
+
+#define httpp_find_header(req_or_res, name) \
+    (httpp_headers_arr_find((req_or_res)->headers, name))
 
 #ifdef HTTPP_IMPLEMENTATION
 
@@ -209,7 +216,6 @@ const char* httpp_status_to_string(httpp_status_t s)
     }
 }
 
-
 httpp_headers_arr_t* httpp_headers_arr_new()
 {
     httpp_headers_arr_t* out = (httpp_headers_arr_t*) malloc(sizeof(httpp_headers_arr_t));
@@ -267,7 +273,7 @@ void httpp_req_free(httpp_req_t* req)
     free(req);
 }
 
-httpp_header_t* httpp_headers_append(httpp_headers_arr_t* hs, httpp_header_t header)
+httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header)
 {
     if (hs->length >= hs->capacity) {
         size_t new_cap = hs->capacity * 2;
@@ -293,7 +299,19 @@ httpp_header_t* httpp_headers_append(httpp_headers_arr_t* hs, httpp_header_t hea
     return &hs->arr[hs->length - 1];
 }
 
-httpp_header_t* httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* value)
+httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name)
+{
+    // For the sake of simplicity and minimalism, it's just a for loop. No hash table here.
+    for (size_t i = 0; i < hs->length; i++) {
+        if (strcmp(hs->arr[i].name, name) == 0)
+            return &hs->arr[i];
+    }
+
+    return NULL;
+}
+
+
+httpp_header_t* httpp_headers_arr_add(httpp_headers_arr_t* hs, char* name, char* value)
 {
     if (!name || !value) 
         return NULL;
@@ -303,7 +321,7 @@ httpp_header_t* httpp_headers_add(httpp_headers_arr_t* hs, char* name, char* val
         strdup(value)
     };
 
-    httpp_header_t* out = httpp_headers_append(hs, h);
+    httpp_header_t* out = httpp_headers_arr_append(hs, h);
     
     if (out == NULL) {
         free(h.name);
@@ -346,7 +364,7 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line, size_t c
     memcpy(value, value_start, value_len);
     value[value_len] = '\0';
 
-    return httpp_headers_append(hs, (httpp_header_t){name, value});
+    return httpp_headers_arr_append(hs, (httpp_header_t){name, value});
 }
 
 static int parse_start_line(char** itr, httpp_req_t* dest) 
@@ -438,12 +456,23 @@ httpp_res_t* httpp_res_new()
     return out;
 }
 
+int httpp_res_set_body(httpp_res_t* res, char* body) 
+{
+    char* content = strdup(body);
+    if (!content)
+        return 1;
+
+    res->body = content;
+    return 0;
+}
+
 void httpp_res_free(httpp_res_t* res) 
 {
     if (!res)
         return;
 
     httpp_headers_arr_free(res->headers);
+    free(res->body);
 }
 
 char* httpp_res_to_raw(httpp_res_t* res)

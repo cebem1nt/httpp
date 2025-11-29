@@ -1,4 +1,4 @@
-// A benchmark adapted from https://github.com/fukamachi/fast-http
+// A benchmark adapted from https://github.com/h2o/picohttpparser
 
 #include <assert.h>
 #include <stdio.h>
@@ -23,14 +23,15 @@
 
 #define ITERATIONS 10000000
 
-double now_seconds(void) 
+double now_seconds() 
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec + ts.tv_nsec / 1e9;
 }
 
-int main(void) {
+int main() 
+{
     char* raw = REQ;
     size_t raw_len = strlen(raw);
     int i;
@@ -47,6 +48,11 @@ int main(void) {
     }
     double t1 = now_seconds();
 
-    printf("Elapsed %f seconds.\n", t1 - t0);
+    double elapsed = t1 - t0;
+    double reqs_per_second = (double) ITERATIONS / elapsed;
+
+    printf("Elapsed %f seconds.\n", elapsed);
+    printf("Requests per second ≈ %.2f \n", reqs_per_second);
+
     return 0;
 }

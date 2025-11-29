@@ -73,11 +73,11 @@ int main()
     httpp_res_t* res = httpp_res_new();
     
     res->code = 200;
-    httpp_headers_add(res->headers, "Host", "idk.me.com");
-    httpp_headers_add(res->headers, "Home", "pkeofkwekgfwktokwt9wt293430592304");
-    httpp_headers_add(res->headers, "SOmethin", "afkofkeokfoekfo");
-    char* body = "{\"hello\": 123}\n";
-    res->body = body;
+    httpp_headers_arr_add(res->headers, "Host", "idk.me.com");
+    httpp_headers_arr_add(res->headers, "Home", "pkeofkwekgfwktokwt9wt293430592304");
+    httpp_headers_arr_add(res->headers, "SOmethin", "afkofkeokfoekfo");
+
+    httpp_res_set_body(res, "{\"hello\": 123}\n");
 
     char* raw = httpp_res_to_raw(res);
     printf("-----------\n");
