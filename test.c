@@ -28,7 +28,7 @@ void print(httpp_req_t* parsed)
 int main() 
 {
     char* req1 = 
-    "POST /api/items HTTP/1.1 \r\n"
+    "POST /api/items HTTP/1.1\r\n"
     "Host: api.example.com\r\n"
     "User-Agent: MyClient/1.0\r\n"
     "Content-Type: application/json\r\n"
@@ -57,12 +57,12 @@ int main()
 
     char* req3 = 
     "POST /api/items HTTP/1.1\r\n"
-    "  Host: api.example.com\r\n"
-    "   User-Agent  : MyClient/1.0\r\n"
-    "  Content-Type: application/json; charset=utf-8\r\n"
-    "    Content-Length: 106\r\n"
-    "  X-Trace-ID: ;;--TRACE--;;\r\n"
-    "   X-Feature-Flags: ,enable-new, ,\r\n"
+    "Host: api.example.com\r\n"
+    "User-Agent: MyClient/1.0\r\n"
+    "Content-Type: application/json; charset=utf-8\r\n"
+    "Content-Length: 106\r\n"
+    "X-Trace-ID: ;;--TRACE--;;\r\n"
+    "X-Feature-Flags: ,enable-new, ,\r\n"
     "\r\n";
 
     printf("--- req3 ---\n");
@@ -76,7 +76,8 @@ int main()
     httpp_headers_add(res->headers, "Host", "idk.me.com");
     httpp_headers_add(res->headers, "Home", "pkeofkwekgfwktokwt9wt293430592304");
     httpp_headers_add(res->headers, "SOmethin", "afkofkeokfoekfo");
-    httpp_res_set_body(res, "{\"hello\": 123}\n");
+    char* body = "{\"hello\": 123}\n";
+    res->body = body;
 
     char* raw = httpp_res_to_raw(res);
     printf("-----------\n");
