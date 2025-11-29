@@ -303,7 +303,7 @@ httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name)
 {
     // For the sake of simplicity and minimalism, it's just a for loop. No hash table here.
     for (size_t i = 0; i < hs->length; i++) {
-        if (strcmp(hs->arr[i].name, name) == 0)
+        if (strcasecmp(hs->arr[i].name, name) == 0)
             return &hs->arr[i];
     }
 
