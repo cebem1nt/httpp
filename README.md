@@ -21,44 +21,82 @@ char* req =
 
 int main() 
 {
-    httpp_req_t* parsed = httpp_parse_request(req);
-    printf("%s\n", parsed->body); // parsed, malloc'd body
-    printf("%i\n", parsed->method); // Method is an enum!
+    httpp_req_t parsed;
+    httpp_header_t headers[HTTPP_DEFAULT_HEADERS_ARR_CAP]; // Array for parsed headers
+    httpp_init_req(&parsed, headers, HTTPP_DEFAULT_HEADERS_ARR_CAP); // Initialize the request on stack
 
-    const char* method = httpp_method_to_string(parsed->method); // Method as string (e.g POST)
+    httpp_parse_request(req, strlen(req), &parsed); // Parse the request!
+
+    printf("%s\n", parsed.body.ptr); // Pointer to the beginning of the body
+    printf("%i\n", parsed.method); // Method is an enum!
+
+    const char* method = httpp_method_to_string(parsed.method); // Method as string (e.g POST)
     printf("%s\n", method); 
 
     httpp_header_t* host = httpp_find_header(parsed, "Host"); 
-    printf("%s\n", host->value); // api.example.com
+    // Httpp stores pointers to the conentent in your buffer.
+    // Each string is storred as "span" or a string view. 
+    // to convert it to a null terminated string (malloc'd), use this:
+    char* name = httpp_span_to_str(&host->name);
+    printf("%s\n", name);
 
-    httpp_res_t* response = httpp_res_new();
-    response->code = Ok; // or 200
-    httpp_add_header(response, "Host", "somehost.some.where");
-    httpp_add_header(response, "Status", "ok");
-    
-    httpp_res_set_body(response, "Some body");
-    char* raw = httpp_res_to_raw(response); // Convert to a malloc'd raw string 
+    free(name); // Dont forget to free it when you're done
+
+    httpp_res_t response;
+    httpp_header_t response_headers[2]; 
+    httpp_init_res(&response, response_headers, 2);
+
+    response.code = Ok; // or 200
+    httpp_res_add_header(&response, "Host", "somehost.some.where");
+    httpp_header_t* status = httpp_res_add_header(&response, "Status", "ok");
+    // If you try to add more headers than the capacity is, httpp_add_header will return NULL
+
+    char* body = "Some body";
+    httpp_res_set_body(&response, body, strlen(body)); // httpp_res_set_body sets the pointer to body, it doesn't copy it 
+
+    char* raw = httpp_res_to_raw(&response); // Convert to a malloc'd raw string 
 
     printf("\nComposed response: \n");
-    printf("----\n%s\n----\n", raw); // Or write it to a socket
+    printf("----\n%s\n----\n", raw);  // Or write it to a socket
+    printf("Body length = %lu\n", response.body.length);
 
-    // Don't forget to free everything
-    httpp_req_free(parsed); // Free parsed request
-    httpp_res_free(response); // Free response structure
-    free(raw); // Free composed raw response 
+    free(raw);
+
+    // When using httpp_res_add_header, it strdups given name and value, so make sure to free it  
+    httpp_res_free_added(&response); 
 }
 ```
 
 ## Benchmark
-All benchmarks were compiled with -O3 flag using gcc _15.2.1 20251112_. Benchmarks were running on a Ryzen 7 with 4.79GHz peek frequency. The code can be found [here](./bench.c). Same benchmark was adapted for http-parser. Results of each one is the average of 5 runs
+All benchmarks were compiled with -O3 flag using gcc _15.2.1 20251112_. Benchmarks were running on a Ryzen 7 with 4.79GHz peek frequency. The code can be found in `benchmarks`. Same benchmark was adapted for http-parser. Results of each one is the average of 5 runs
 
-![Elapsed time](./img/elapsed.svg)
+Benchmarked with the following request (adapted for each one from [picohttp](https://github.com/h2o/picohttpparser))
+
+```c
+#define REQ                                                                                                             \
+    "GET /wp-content/uploads/2010/03/hello-kitty-darth-vader-pink.jpg HTTP/1.1\r\n"                                     \
+    "Host: www.kittyhell.com\r\n"                                                                                       \
+    "User-Agent: Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.6; ja-JP-mac; rv:1.9.2.3) Gecko/20100401 Firefox/3.6.3 "  \
+    "Pathtraq/0.9\r\n"                                                                                                  \
+    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"                                       \
+    "Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n"                                                                      \
+    "Accept-Encoding: gzip,deflate\r\n"                                                                                 \
+    "Accept-Charset: Shift_JIS,utf-8;q=0.7,*;q=0.7\r\n"                                                                 \
+    "Keep-Alive: 115\r\n"                                                                                               \
+    "Connection: keep-alive\r\n"                                                                                        \
+    "Cookie: wp_ozh_wsa_visits=2; wp_ozh_wsa_visit_lasttime=xxxxxxxxxx; "                                               \
+    "__utma=xxxxxxxxx.xxxxxxxxxx.xxxxxxxxxx.xxxxxxxxxx.xxxxxxxxxx.x; "                                                  \
+    "__utmz=xxxxxxxxx.xxxxxxxxxx.x.x.utmccn=(referral)|utmcsr=reader.livedoor.com|utmcct=/reader/|utmcmd=referral\r\n"  \
+    "\r\n"
+```
+
+![Elapsed time](./benchmarks/elapsed.svg)
 
 | http-parser |   httpp     | picohttpparser |
 | ----------- | ----------- | -------------- |
 | `5.344527s` | `3.058964s` |   `2.005615s`  |
 
-![Requests per second](./img/requests.svg)
+![Requests per second](./benchmarks/requests.svg)
 
 |  http-parser  |    httpp      | picohttpparser |
 | ------------- | ------------- | -------------- |
