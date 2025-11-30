@@ -34,10 +34,10 @@ void print(httpp_req_t* parsed)
     }
 
     printf("\n---- Parsed body: ----\n");
-    printf("%s\n", parsed->body.start);
+    printf("%s\n", parsed->body.ptr);
     printf("-------- (%lu) --------\n", parsed->body.length);
 
-    assert(parsed->body.length == strlen(parsed->body.start)); // For our simple, plain text tests
+    assert(parsed->body.length == strlen(parsed->body.ptr)); // For our simple, plain text tests
 }
 
 int main() 
@@ -104,9 +104,9 @@ int main()
     httpp_init_res(&res, arr, HTTPP_DEFAULT_HEADERS_ARR_CAP);
     
     res.code = 200;
-    httpp_headers_arr_add(&res.headers, "Host", "idk.me.com");
-    httpp_headers_arr_add(&res.headers, "Home", "pkeofkwekgfwktokwt9wt293430592304");
-    httpp_headers_arr_add(&res.headers, "SOmethin", "afkofkeokfoekfo");
+    httpp_res_add_header(&res, "Host", "idk.me.com");
+    httpp_res_add_header(&res, "Home", "pkeofkwekgfwktokwt9wt293430592304");
+    httpp_res_add_header(&res, "SOmethin", "afkofkeokfoekfo");
 
     char* body = "{\"hello\": 123}\n";
     httpp_res_set_body(&res, body, strlen(body));
