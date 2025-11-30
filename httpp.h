@@ -1,3 +1,6 @@
+#ifndef _HTTPP_H_
+#define _HTTPP_H_
+
 /*
  * Tiny header only http parser library for
  * http 1/1 version (enums don't respect your namespace much, sorry)
@@ -13,8 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define HTTPP_INITIAL_HEADERS_ARR_CAP 20
-#define HTTPP_HEADERS_ARR_LIMIT -1
+#define HTTPP_DEFAULT_HEADERS_ARR_CAP 20
 
 #define HTTPP_MAX_METHOD_LENGTH (10 + 1)
 #define HTTPP_VERSION_BUFSIZE (10 + 1)
@@ -69,8 +71,13 @@ typedef enum {
 } httpp_status_t;
 
 typedef struct {
-    char* name;
-    char* value;
+    char* start;
+    size_t length;
+} httpp_span_t;
+
+typedef struct {
+    httpp_span_t name;
+    httpp_span_t value;
 } httpp_header_t;
 
 typedef struct {
@@ -80,35 +87,30 @@ typedef struct {
 } httpp_headers_arr_t;
 
 typedef struct {
+    httpp_headers_arr_t headers;
     httpp_method_t method;
-    httpp_headers_arr_t* headers;
-    char* route;
-    char* body;
+    httpp_span_t body;
+    httpp_span_t route;
 } httpp_req_t;
 
 typedef struct {
-    httpp_headers_arr_t* headers;
+    httpp_headers_arr_t headers;
     httpp_status_t code;
-    char* body;
+    httpp_span_t body;
 } httpp_res_t;
 
+char* httpp_span_to_str(httpp_span_t* sv);
 const char* httpp_method_to_string(httpp_method_t m);
 const char* httpp_status_to_string(httpp_status_t s);
 
-httpp_req_t* httpp_req_new();
-void httpp_req_free(httpp_req_t* req);
+int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest);
+httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len);
 
-httpp_req_t* httpp_parse_request(char* raw);
-httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line, size_t content_len);
-
-httpp_headers_arr_t* httpp_headers_arr_new();
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header);
-httpp_header_t* httpp_headers_arr_add(httpp_headers_arr_t* hs, char* name, char* value); // stdrup and httpp_headers_arr_append
+httpp_header_t* httpp_headers_arr_add(httpp_headers_arr_t* hs, char* name, char* value);
 httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
-void httpp_headers_arr_free(httpp_headers_arr_t* hs);
 
-httpp_res_t* httpp_res_new();
-int httpp_res_set_body(httpp_res_t* res, char* body); // strdup body and set it
+int httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len);
 char* httpp_res_to_raw(httpp_res_t* res);
 void httpp_res_free(httpp_res_t* res);
 
@@ -117,6 +119,31 @@ void httpp_res_free(httpp_res_t* res);
 
 #define httpp_find_header(req_or_res, name) \
     (httpp_headers_arr_find((req_or_res)->headers, name))
+
+static inline void httpp_init_span(httpp_span_t* span) 
+{
+    span->start = NULL;
+    span->length = 0;
+}
+
+static inline void httpp_init_req(httpp_req_t* dest, httpp_header_t* headers_arr, size_t headers_capacity)
+{
+    httpp_init_span(&dest->route);
+    httpp_init_span(&dest->body);
+
+    dest->headers.arr = headers_arr;
+    dest->headers.capacity = headers_capacity;
+    dest->headers.length = 0;
+}
+
+static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr, size_t headers_capacity)
+{
+    dest->code = Unspecified;
+
+    dest->headers.arr = headers_arr;
+    dest->headers.capacity = headers_capacity;
+    dest->headers.length = 0;
+}
 
 #ifdef HTTPP_IMPLEMENTATION
 
@@ -179,6 +206,18 @@ const char* httpp_method_to_string(httpp_method_t m)
     }
 }
 
+char* httpp_span_to_str(httpp_span_t* sv)
+{
+    char* out = (char*) malloc(sv->length + 1);
+
+    if (!out)
+        return NULL;
+
+    memcpy(out, sv->start, sv->length);
+    out[sv->length] = '\0';
+    return out;
+}
+
 const char* httpp_status_to_string(httpp_status_t s) 
 {
     switch (s) {
@@ -216,84 +255,13 @@ const char* httpp_status_to_string(httpp_status_t s)
     }
 }
 
-httpp_headers_arr_t* httpp_headers_arr_new()
-{
-    httpp_headers_arr_t* out = (httpp_headers_arr_t*) malloc(sizeof(httpp_headers_arr_t));
-
-    out->arr = (httpp_header_t*) malloc(sizeof(httpp_header_t) * HTTPP_INITIAL_HEADERS_ARR_CAP);
-    if (!out->arr) {
-        free(out);
-        return NULL;
-    }
-
-    out->capacity = HTTPP_INITIAL_HEADERS_ARR_CAP;
-    out->length = 0;
-    return out;
-}
-
-httpp_req_t* httpp_req_new() 
-{
-    httpp_req_t* out = (httpp_req_t*) malloc(sizeof(httpp_req_t));
-    if (!out)
-        return NULL;
-
-    out->headers = httpp_headers_arr_new();
-    if (!out->headers) {
-        free(out);
-        return NULL;
-    }
-
-    out->route = NULL;
-    out->body = NULL;
-    return out;
-}
-
-void httpp_headers_arr_free(httpp_headers_arr_t* hs)
-{
-    if (!hs) 
-        return;
-
-    for (size_t i = 0; i < hs->length; i++) {
-        free(hs->arr[i].name);
-        free(hs->arr[i].value);
-    }
-
-    free(hs->arr);
-    free(hs);
-}
-
-void httpp_req_free(httpp_req_t* req)
-{
-    if (!req) 
-        return;
-
-    httpp_headers_arr_free(req->headers);
-    free(req->route);
-    free(req->body);
-    free(req);
-}
-
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header)
 {
-    if (hs->length >= hs->capacity) {
-        size_t new_cap = hs->capacity * 2;
-        
-        if (new_cap <= hs->capacity) {
-            free(hs->arr);
-            return NULL;
-        }
+    if (hs->length >= hs->capacity)
+        return NULL; // Array is full
 
-        hs->arr = (httpp_header_t*) realloc(hs->arr, new_cap * sizeof(httpp_header_t));
-        if (!hs->arr) {
-            free(hs->arr);
-            return NULL;
-        }
-        
-        hs->capacity = new_cap;
-    }
-
-    if (!header.name || !header.value) 
-        return NULL;
+    if (!header.name.start || !header.value.start) 
+        return NULL; // Value is empty
 
     hs->arr[hs->length++] = header;
     return &hs->arr[hs->length - 1];
@@ -303,7 +271,7 @@ httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name)
 {
     // For the sake of simplicity and minimalism, it's just a for loop. No hash table here.
     for (size_t i = 0; i < hs->length; i++) {
-        if (strcasecmp(hs->arr[i].name, name) == 0)
+        if (strncasecmp(hs->arr[i].name.start, name, hs->arr[i].name.length) == 0)
             return &hs->arr[i];
     }
 
@@ -315,23 +283,25 @@ httpp_header_t* httpp_headers_arr_add(httpp_headers_arr_t* hs, char* name, char*
 {
     if (!name || !value) 
         return NULL;
-
+    
+    // To not create more functions and to not complicate the usage of
+    // headers appendind, httpp_headers_arr_add will strdup name and value
     httpp_header_t h = {
-        strdup(name), 
-        strdup(value)
+        {strdup(name), strlen(name)}, 
+        {strdup(value), strlen(value)}
     };
 
     httpp_header_t* out = httpp_headers_arr_append(hs, h);
     
     if (out == NULL) {
-        free(h.name);
-        free(h.value);
+        free(h.name.start);
+        free(h.value.start);
     } 
 
     return out;
 }
 
-httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line, size_t content_len)
+httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len)
 {
     // RFC says that header starting with whitespace or any other non printable ascii should be rejected.
     if (*line == ' ' || *line == '\r' || *line == '\n')
@@ -343,51 +313,40 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* hs, char* line, size_t c
 
     size_t name_len = colon - line;
 
-    char* name = (char*) malloc(name_len + 1);
-    if (!name)
-        return NULL;
-    
-    memcpy(name, line, name_len);
-    name[name_len] = '\0';
-
     char* value_start = colon + 1;
     size_t value_len = content_len - name_len - 1;
 
     ltrim_buf(value_start, value_len);
 
-    char* value = (char*) malloc(value_len + 1);
-    if (!value) {
-        free(name);
-        return NULL;
-    }
+    httpp_span_t name = {line, name_len};
+    httpp_span_t value = {value_start, value_len};
 
-    memcpy(value, value_start, value_len);
-    value[value_len] = '\0';
-
-    return httpp_headers_arr_append(hs, (httpp_header_t){name, value});
+    return httpp_headers_arr_append(dest, (httpp_header_t){name, value});
 }
 
 static int parse_start_line(char** itr, httpp_req_t* dest) 
 {
     char  method_buf[HTTPP_MAX_METHOD_LENGTH];
     char  version_buf[HTTPP_VERSION_BUFSIZE];
-    char* route;
+    httpp_span_t route;
 
     if (chop_until(' ', itr, method_buf, HTTPP_MAX_METHOD_LENGTH) != 0)
         return 1; 
 
-    if ((route = dchop_until(' ', itr)) == NULL)
+    route.start = *itr;
+    char* space = strchr(*itr, ' ');
+    
+    if (!space)
+        return 1;
+    
+    route.length = space - route.start;
+    *itr = space + 1;
+
+    if (chop_until('\r', itr, version_buf, HTTPP_VERSION_BUFSIZE) != 0)
         return 1;
 
-    if (chop_until('\r', itr, version_buf, HTTPP_VERSION_BUFSIZE) != 0) {
-        free(route);
+    if (strcmp(version_buf, HTTPP_SUPPORTED_VERSION) != 0)
         return 1;
-    }
-
-    if (strcmp(version_buf, HTTPP_SUPPORTED_VERSION) != 0) {
-        free(route);
-        return 1;
-    }
 
     dest->method = (httpp_method_t) httpp_string_to_method(method_buf);
     dest->route = route;
@@ -396,17 +355,13 @@ static int parse_start_line(char** itr, httpp_req_t* dest)
     return 0;
 }
 
-httpp_req_t* httpp_parse_request(char* raw)
+int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
 {
-    httpp_req_t* out = httpp_req_new();
+    char* itr = buf;
+    char* end = buf + n;
 
-    char* itr = raw;
-    char* end = raw + strlen(raw);
-
-    if (parse_start_line(&itr, out) != 0) {
-        httpp_req_free(out);
-        return NULL;
-    }
+    if (parse_start_line(&itr, dest) != 0)
+        return 1;
 
     while (itr < end) {
         char* del_pos = strstr(itr, _HTTP_DELIMITER);
@@ -419,50 +374,21 @@ httpp_req_t* httpp_parse_request(char* raw)
             break;
         }
 
-        if (httpp_parse_header(out->headers, itr, line_size) == NULL) {
-            httpp_req_free(out);
-            return NULL;
-        }
-
-        if (HTTPP_HEADERS_ARR_LIMIT != -1 && out->headers->length >= HTTPP_HEADERS_ARR_LIMIT) {
-            httpp_req_free(out); // Limit reached
-            return NULL;
-        }
+        if (httpp_parse_header(&dest->headers, itr, line_size) == NULL)
+            return 1;
 
         itr = del_pos + _HTTP_DELIMITER_SIZE;
     }
 
-    out->body = strdup(itr);
-    if (!out->body) {
-        httpp_req_free(out);
-        return NULL;
-    }
+    dest->body.start = itr; // Itr now points at the beginning of the body
+    dest->body.length = n - (itr - buf);
 
-    return out;
+    return 0;
 }
 
-// --- Responses part ---
-httpp_res_t* httpp_res_new()
+int httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len) 
 {
-    httpp_res_t* out = (httpp_res_t*) malloc(sizeof(httpp_res_t));
-    if (!out)
-        return NULL;
-
-    out->headers = httpp_headers_arr_new();
-    if (!out->headers) 
-        return NULL;
-    
-    out->code = Unspecified;
-    return out;
-}
-
-int httpp_res_set_body(httpp_res_t* res, char* body) 
-{
-    char* content = strdup(body);
-    if (!content)
-        return 1;
-
-    res->body = content;
+    res->body = (httpp_span_t){body_ptr, body_len};
     return 0;
 }
 
@@ -471,13 +397,16 @@ void httpp_res_free(httpp_res_t* res)
     if (!res)
         return;
 
-    httpp_headers_arr_free(res->headers);
-    free(res->body);
+    // Thats a little bit confusing that http_res acutally allocates strings
+    for (size_t i = 0; i < res->headers.length; i++) {
+        free(res->headers.arr[i].name.start);
+        free(res->headers.arr[i].value.start);
+    }
 }
 
 char* httpp_res_to_raw(httpp_res_t* res)
 {
-    if (res == NULL || res->headers == NULL)
+    if (res == NULL)
         return NULL; 
 
     if (res->code == -1 || (int) res->code > 999)
@@ -492,21 +421,21 @@ char* httpp_res_to_raw(httpp_res_t* res)
         + strlen(status_msg)
         + _HTTP_DELIMITER_SIZE;
 
-    for (size_t i = 0; i < res->headers->length; i++) {
-        httpp_header_t header = res->headers->arr[i];
-        if (!header.name || !header.value)
+    for (size_t i = 0; i < res->headers.length; i++) {
+        httpp_header_t header = res->headers.arr[i];
+        
+        if (!header.name.start || !header.value.start)
             continue;
 
-        out_size += strlen(header.name) + 2 // ": "
-                  + strlen(header.value) 
+        out_size += header.name.length + 2 // ": "
+                  + header.value.length 
                   + _HTTP_DELIMITER_SIZE;
     }
 
     out_size += _HTTP_DELIMITER_SIZE;
-    if (res->body) 
-        out_size += strlen(res->body);
-
+    out_size += res->body.length;
     out_size += 1; // '\0'
+
     char* out = (char*) malloc(out_size);
     if (!out)
         return NULL;
@@ -519,13 +448,13 @@ char* httpp_res_to_raw(httpp_res_t* res)
 
     size_t offset = written;
 
-    for (size_t i = 0; i < res->headers->length; i++) {
-        httpp_header_t header = res->headers->arr[i];
-        if (!header.name || !header.value)
+    for (size_t i = 0; i < res->headers.length; i++) {
+        httpp_header_t header = res->headers.arr[i];
+        if (!header.name.start || !header.value.start)
             continue;
 
         int n = snprintf(out + offset, out_size - offset, 
-                    "%s: %s\r\n", header.name, header.value);
+                    "%s: %s\r\n", header.name.start, header.value.start);
 
         if (n < 0 || (size_t) n >= out_size - offset) {
             free(out);
@@ -536,14 +465,18 @@ char* httpp_res_to_raw(httpp_res_t* res)
     }
 
     strcat(out, _HTTP_DELIMITER);
-    if (res->body)
-        strcat(out, res->body);
 
+    if (res->body.length) {
+        char* end = out + offset + _HTTP_DELIMITER_SIZE;
+        memcpy(end, res->body.start, res->body.length);
+        end[res->body.length] = '\0';
+    }
+        
     return out;
 }
 
 #endif // HTTPP_IMPLEMENTATION
-
+#endif // _HTTPP_H_
 /*
 * MIT License
 * 

@@ -38,13 +38,15 @@ int main()
 
     double t0 = now_seconds();
     for (i = 0; i < ITERATIONS; ++i) {
-        httpp_req_t* req = httpp_parse_request(raw);
-        if (!req) {
+        httpp_req_t req;
+        httpp_header_t arr[HTTPP_DEFAULT_HEADERS_ARR_CAP];
+
+        httpp_init_req(&req, arr, HTTPP_DEFAULT_HEADERS_ARR_CAP);
+        
+        if (httpp_parse_request(raw, strlen(raw), &req) != 0) {
             fprintf(stderr, "parse failed at iter %d\n", i);
             return 1;
         }
-
-        httpp_req_free(req);
     }
     double t1 = now_seconds();
 
