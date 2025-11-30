@@ -1,5 +1,5 @@
 # httpp
-Tiny, simple, yet useful header only dynamic HTTP/1.1 requests parser for C.
+Tiny, fast, simple, yet useful header only HTTP/1.1 requests parser for C. httpp has very small codebase and is fully available to your modifications. Want to replace fixed size headers array with a hash table? all yours.
 
 ## API
 
@@ -68,7 +68,7 @@ int main()
 ```
 
 ## Benchmark
-All benchmarks were compiled with -O3 flag using gcc _15.2.1 20251112_. Benchmarks were running on a Ryzen 7 with 4.79GHz peek frequency. The code can be found in `benchmarks`. Same benchmark was adapted for http-parser. Results of each one is the average of 5 runs
+All benchmarks were compiled with -O3 flag using gcc _15.2.1 20251112_. Benchmarks were running on a Ryzen 7 with 4.79GHz peek frequency. The code can be found in `benchmarks` directory. Same benchmark was adapted for http-parser. Results of each one is the average of 5 runs.
 
 Benchmarked with the following request (adapted for each one from [picohttp](https://github.com/h2o/picohttpparser))
 
@@ -92,12 +92,12 @@ Benchmarked with the following request (adapted for each one from [picohttp](htt
 
 ![Elapsed time](./benchmarks/elapsed.svg)
 
-| http-parser |   httpp     | picohttpparser |
-| ----------- | ----------- | -------------- |
-| `5.344527s` | `3.058964s` |   `2.005615s`  |
+| httppv1     | http-parser | httppv2     | picohttpparser |
+| ----------- | ----------- | ----------- | -------------- |
+| `2.788205s` | `9.055873s` | `0.964826s` | `2.035271s`    |
 
 ![Requests per second](./benchmarks/requests.svg)
 
-|  http-parser  |    httpp      | picohttpparser |
-| ------------- | ------------- | -------------- |
-| `1871702.306` | `3269700.736` |  `4986831.824` |
+| httppv1     | http-parser  | httppv2     | picohttpparser |
+| ----------- | ------------ | ----------- | -------------- |
+| 3586537.12  | 1104255.77   | 10364561.00 | 4913351.09     |

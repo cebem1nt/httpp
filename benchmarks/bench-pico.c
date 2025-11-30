@@ -4,7 +4,6 @@
 
 #include "./picohttpparser/picohttpparser.h"
 
-#define ITERATIONS 10000000
 #define REQ                                                                                                                        \
     "GET /wp-content/uploads/2010/03/hello-kitty-darth-vader-pink.jpg HTTP/1.1\r\n"                                                \
     "Host: www.kittyhell.com\r\n"                                                                                                  \
@@ -21,7 +20,7 @@
     "__utmz=xxxxxxxxx.xxxxxxxxxx.x.x.utmccn=(referral)|utmcsr=reader.livedoor.com|utmcct=/reader/|utmcmd=referral\r\n"             \
     "\r\n"
 
-int main(void)
+double benchmark()
 {
     const char *method;
     size_t method_len;
@@ -41,12 +40,24 @@ int main(void)
         assert(ret == sizeof(REQ) - 1);
     }
     end = (double)clock()/CLOCKS_PER_SEC;
+    return end - start;
+}
 
-    double elapsed = (end - start);
-    double reqs_per_second = (double) ITERATIONS / elapsed;
+int main()
+{
+    double total = 0.0;
 
-    printf("Elapsed %f seconds.\n", elapsed);
-    printf("Requests per second ≈ %.2f \n", reqs_per_second);
+    for (int i = 0; i < RUNS; i++) {
+        double elapsed = benchmark();
+        total += elapsed;
 
+        printf("Run %i:\n", i);
+        printf(" Elapsed time: %f\n", elapsed);
+        printf(" Requests per second ≈ %.2f\n", (double) ITERATIONS / elapsed);
+    }
+
+    printf("\nAverage elapsed time %f\n", total / RUNS);
+    printf("Average Requests per second ≈ %.2f\n\n", (double) ITERATIONS / (total / RUNS));
+    
     return 0;
 }

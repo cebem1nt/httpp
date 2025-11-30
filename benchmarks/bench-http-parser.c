@@ -6,7 +6,6 @@
 #include <string.h>
 #include <time.h>
 
-#define ITERATIONS 10000000
 #define REQ                                                                                                                        \
     "GET /wp-content/uploads/2010/03/hello-kitty-darth-vader-pink.jpg HTTP/1.1\r\n"                                                \
     "Host: www.kittyhell.com\r\n"                                                                                                  \
@@ -36,7 +35,7 @@ static http_parser_settings settings_null =
   ,.on_message_complete = 0
   };
 
-int main()
+double benchmark()
 {
     int i;
     double start, end;
@@ -56,11 +55,24 @@ int main()
     free(parser);
     parser = NULL;
 
-    double elapsed = (end - start);
-    double reqs_per_second = (double) ITERATIONS / elapsed;
+    return end - start;
+}
 
-    printf("Elapsed %f seconds.\n", elapsed);
-    printf("Requests per second ≈ %.2f \n", reqs_per_second);
+int main()
+{
+    double total = 0.0;
 
+    for (int i = 0; i < RUNS; i++) {
+        double elapsed = benchmark();
+        total += elapsed;
+
+        printf("Run %i:\n", i);
+        printf(" Elapsed time: %f\n", elapsed);
+        printf(" Requests per second ≈ %.2f\n", (double) ITERATIONS / elapsed);
+    }
+
+    printf("\nAverage elapsed time %f\n", total / RUNS);
+    printf("Average Requests per second ≈ %.2f\n\n", (double) ITERATIONS / (total / RUNS));
+    
     return 0;
 }
