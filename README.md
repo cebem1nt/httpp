@@ -90,14 +90,14 @@ Benchmarked with the following request (adapted for each one from [picohttp](htt
     "\r\n"
 ```
 
-![Elapsed time](./benchmarks/elapsed.svg)
+![Elapsed time](./benchmarks/1.svg)
 
-| httppv1     | http-parser | httppv2     | picohttpparser |
+| httppv1     | [http-parser](https://github.com/nodejs/http-parser) | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
 | ----------- | ----------- | ----------- | -------------- |
 | `2.788205s` | `9.055873s` | `0.964826s` | `2.035271s`    |
 
-![Requests per second](./benchmarks/requests.svg)
+![Requests per second](./benchmarks/2.svg)
 
-| httppv1     | http-parser  | httppv2     | picohttpparser |
+| httppv1     | [http-parser](https://github.com/nodejs/http-parser) | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
 | ----------- | ------------ | ----------- | -------------- |
 | 3586537.12  | 1104255.77   | 10364561.00 | 4913351.09     |
