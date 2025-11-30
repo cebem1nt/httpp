@@ -110,7 +110,7 @@ httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t
 httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
 
 httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value);
-int httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len);
+void httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len);
 void httpp_res_free_added(httpp_res_t* res);
 char* httpp_res_to_raw(httpp_res_t* res);
 
@@ -157,23 +157,6 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
         (len)--;                                                                \
     }                                                                           \
     } while (0)
-
-static int chop_until(char c, char** src, char* dest, size_t n) 
-{
-    char* pos = strchr(*src, c);
-    if (!pos)
-        return 1;
-
-    size_t chopped_size = pos - *src;
-    if (chopped_size >= n)
-        return 1;
-
-    memcpy(dest, *src, chopped_size);
-    dest[chopped_size] = '\0';
-
-    *src = pos + 1;
-    return 0;
-}
 
 const char* httpp_method_to_string(httpp_method_t m) 
 {
@@ -303,34 +286,28 @@ void httpp_res_free_added(httpp_res_t* res)
     }
 }
 
-httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len)
+static int chop_until(char c, char** src, char* dest, size_t n) 
 {
-    // RFC says that header starting with whitespace or any other non printable ascii should be rejected.
-    if (*line == ' ' || *line == '\r' || *line == '\n')
-        return NULL;
+    char* pos = (char*) memchr(*src, c, n);
+    if (!pos)
+        return 1;
 
-    char* colon = (char*) memchr(line, ':', content_len);
-    if (!colon)
-        return NULL;
+    size_t chopped_size = pos - *src;
+    if (chopped_size >= n)
+        return 1;
 
-    size_t name_len = colon - line;
+    memcpy(dest, *src, chopped_size);
+    dest[chopped_size] = '\0';
 
-    char* value_start = colon + 1;
-    size_t value_len = content_len - name_len - 1;
-
-    ltrim_buf(value_start, value_len);
-
-    httpp_span_t name = {line, name_len};
-    httpp_span_t value = {value_start, value_len};
-
-    return httpp_headers_arr_append(dest, (httpp_header_t){name, value});
+    *src = pos + 1;
+    return 0;
 }
 
 static int parse_start_line(char** itr, httpp_req_t* dest) 
 {
+    httpp_span_t route;
     char  method_buf[HTTPP_MAX_METHOD_LENGTH];
     char  version_buf[HTTPP_VERSION_BUFSIZE];
-    httpp_span_t route;
 
     if (chop_until(' ', itr, method_buf, HTTPP_MAX_METHOD_LENGTH) != 0)
         return 1; 
@@ -355,6 +332,29 @@ static int parse_start_line(char** itr, httpp_req_t* dest)
 
     ltrim(*itr);
     return 0;
+}
+
+httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len)
+{
+    // RFC says that header starting with whitespace or any other non printable ascii should be rejected.
+    if (*line == ' ' || *line == '\r' || *line == '\n')
+        return NULL;
+
+    char* colon = (char*) memchr(line, ':', content_len);
+    if (!colon)
+        return NULL;
+
+    size_t name_len = colon - line;
+
+    char* value_start = colon + 1;
+    size_t value_len = content_len - name_len - 1;
+
+    ltrim_buf(value_start, value_len);
+
+    httpp_span_t name = {line, name_len};
+    httpp_span_t value = {value_start, value_len};
+
+    return httpp_headers_arr_append(dest, (httpp_header_t){name, value});
 }
 
 int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
@@ -388,10 +388,9 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
     return 0;
 }
 
-int httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len) 
+void httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len)
 {
     res->body = (httpp_span_t){body_ptr, body_len};
-    return 0;
 }
 
 char* httpp_res_to_raw(httpp_res_t* res)
