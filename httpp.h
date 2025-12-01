@@ -359,6 +359,9 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t
 
 int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
 {
+    if (n <= 0 || buf == NULL || dest == NULL)
+        return 0;
+
     char* itr = buf;
     char* end = buf + n;
 
