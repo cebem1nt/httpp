@@ -68,6 +68,7 @@ typedef struct {
     httpp_headers_arr_t headers;
     httpp_span_t body;
     httpp_span_t route;
+    httpp_span_t version;
     int method;
 } httpp_req_t;
 
@@ -82,6 +83,7 @@ const char* httpp_status_to_string(int status_code);
 char* httpp_span_to_str(httpp_span_t* span);
 
 int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest);
+int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest);
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len);
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header);
 httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
@@ -118,6 +120,7 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
     dest->headers.length = 0;
 }
 
+#define HTTPP_IMPLEMENTATION
 #ifdef HTTPP_IMPLEMENTATION
 
 // Originial isspace is kinda slow...
@@ -135,6 +138,11 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
         (str)++;                          \
         (len)--;                          \
     }                                     \
+    } while (0)
+
+#define setstr(dest, src, len) do { \
+    memcpy(dest, (src), (len));     \
+    dest[(len)] = '\0';             \
     } while (0)
 
 static char* __strdup(char* str) 
@@ -252,9 +260,8 @@ char* httpp_span_to_str(httpp_span_t* span)
 
     if (!out)
         return NULL;
-
-    memcpy(out, span->ptr, span->length);
-    out[span->length] = '\0';
+    
+    setstr(out, span->ptr, span->length);
     return out;
 }
 
@@ -327,52 +334,54 @@ void httpp_res_free_added(httpp_res_t* res)
     }
 }
 
-static int chop_until(char c, char** src, char* dest, size_t n) 
-{
-    char* pos = (char*) memchr(*src, c, n);
-    if (!pos)
-        return 1;
-
-    size_t chopped_size = pos - *src;
-    if (chopped_size >= n)
-        return 1;
-
-    memcpy(dest, *src, chopped_size);
-    dest[chopped_size] = '\0';
-
-    *src = pos + 1;
-    return 0;
-}
-
-static int parse_start_line(char** itr, httpp_req_t* dest) 
+int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest)
 {
     httpp_span_t route;
+    httpp_span_t version;
+
     char  method_buf[HTTPP_MAX_METHOD_LENGTH];
-    char  version_buf[HTTPP_VERSION_BUFSIZE];
+    char* itr = buf;
+    char* delim;
 
-    if (chop_until(' ', itr, method_buf, HTTPP_MAX_METHOD_LENGTH) != 0)
-        return 1; 
+    delim = (char*) memchr(itr, ' ', n);
+    if (!delim)
+        return -1;
 
-    route.ptr = *itr;
-    char* space = strchr(*itr, ' ');
+    if (delim - itr >= HTTPP_MAX_METHOD_LENGTH)
+        return -1;
+
+    setstr(method_buf, itr, delim - itr);
+    itr = delim + 1;
+
+    route.ptr = itr;
+    delim = (char*) memchr(itr, ' ', n - (itr - buf));
+    if (!delim)
+        return -1;
     
-    if (!space)
-        return 1;
+    route.length = delim - route.ptr;
+    itr = delim + 1;
+
+    version.ptr = itr;
+    delim = (char*) memchr(itr, '\r', n - (itr - buf));
+    if (!delim)
+        return -1;
     
-    route.length = space - route.ptr;
-    *itr = space + 1;
+    if ((delim - buf) + 2 > n)
+        return -1;
+    if (delim[1] != '\n')
+        return -1;
 
-    if (chop_until('\r', itr, version_buf, HTTPP_VERSION_BUFSIZE) != 0)
-        return 1;
+    version.length = delim - version.ptr;
+    itr = delim + 2;
 
-    if (strcmp(version_buf, HTTPP_SUPPORTED_VERSION) != 0)
-        return 1;
+    if (strncmp(version.ptr, HTTPP_SUPPORTED_VERSION, version.length) != 0)
+        return -1;
 
     dest->method = httpp_string_to_method(method_buf);
+    dest->version = version;
     dest->route = route;
 
-    ltrim(*itr);
-    return 0;
+    return (itr - buf);
 }
 
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len)
@@ -405,10 +414,12 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
 
     char* itr = buf;
     char* end = buf + n;
+    int   offset;
 
-    if (parse_start_line(&itr, dest) != 0)
-        return 1;
+    if ((offset = httpp_parse_start_line(itr, n, dest)) == -1)
+        return -1;
 
+    itr += offset;
     while (itr < end) {
         char* del_pos = strstr(itr, _HTTP_DELIMITER);
         if (!del_pos)
@@ -421,7 +432,7 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
         }
 
         if (httpp_parse_header(&dest->headers, itr, line_size) == NULL)
-            return 1;
+            return -1;
 
         itr = del_pos + _HTTP_DELIMITER_SIZE;
     }
@@ -429,7 +440,7 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
     dest->body.ptr = itr; // Itr now points at the beginning of the body
     dest->body.length = n - (itr - buf);
 
-    return 0;
+    return itr - buf;
 }
 
 void httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len)
@@ -501,8 +512,7 @@ char* httpp_res_to_raw(httpp_res_t* res)
 
     if (res->body.length) {
         char* end = out + offset + _HTTP_DELIMITER_SIZE;
-        memcpy(end, res->body.ptr, res->body.length);
-        end[res->body.length] = '\0';
+        setstr(end, res->body.ptr, res->body.length);
     }
         
     return out;
