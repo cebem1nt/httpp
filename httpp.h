@@ -1,9 +1,8 @@
-#ifndef _HTTPP_H_
-#define _HTTPP_H_
+#ifndef _HTTPP_HEADER
+#define _HTTPP_HEADER
 
 /*
- * Tiny header only http parser library for
- * http 1/1 version (enums don't respect your namespace much, sorry)
+ * Tiny header only http parser library for http 1/1 version 
  * Pipelined requests are not supported because nobody realy cares about them 
  * (https://en.wikipedia.org/wiki/HTTP_pipelining#Implementation_status)
  * 
@@ -15,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>  /* strncasecmp (-std=c11) */
 
 #define HTTPP_DEFAULT_HEADERS_ARR_CAP 20
 
@@ -26,49 +26,27 @@
 #define _HTTP_DELIMITER_SIZE 2
 #define _HTTP_MAX_STATUS_CODE_SIZE 3
 
-#define httpp_string_to_method(s) (strcmp(s, "GET")    == 0 ? 0 : \
-                                   strcmp(s, "POST")   == 0 ? 1 : \
-                                   strcmp(s, "DELETE") == 0 ? 2 : -1)
+#define HTTPP_METHOD_GET       0
+#define HTTPP_METHOD_HEAD      1
+#define HTTPP_METHOD_POST      2
+#define HTTPP_METHOD_PUT       3
+#define HTTPP_METHOD_DELETE    4
+#define HTTPP_METHOD_CONNECT   5
+#define HTTPP_METHOD_OPTIONS   6
+#define HTTPP_METHOD_TRACE     7
+#define HTTPP_METHOD_PATCH     8
+#define HTTPP_METHOD_UNKNOWN  -1
 
-typedef enum {
-    GET,
-    POST,
-    DELETE,
-    UNKNOWN = -1
-} httpp_method_t;
-
-typedef enum {
-    Continue = 100,
-    Switching_Protocols,
-
-    Ok = 200,
-    Created,
-    Accepted,
-
-    Multiple_Choices = 300,
-    Moved_Permanently,
-    Found,
-    See_Other,
-    Not_Modified,
-    Use_Proxy,
-    Temporary_Redirect = 307,
-    Permanent_Redirect,
-
-    Bad_Request = 400,
-    Unauthorized,
-    Payment_Required, // Ahahaha
-    Forbidden,
-    Not_Found,
-
-    Internal_Server_Error = 500,
-    Not_Implemented,
-    Bad_Gateway,
-    Service_Unavailable,
-    Gateway_Timeout,
-    HTTP_Version_Not_Supported,
-
-    Unspecified = -1
-} httpp_status_t;
+#define httpp_string_to_method(s) ( strcmp((s), "GET")     == 0 ? HTTPP_METHOD_GET    : \
+                                    strcmp((s), "HEAD")    == 0 ? HTTPP_METHOD_HEAD   : \
+                                    strcmp((s), "POST")    == 0 ? HTTPP_METHOD_POST   : \
+                                    strcmp((s), "PUT")     == 0 ? HTTPP_METHOD_PUT    : \
+                                    strcmp((s), "DELETE")  == 0 ? HTTPP_METHOD_DELETE : \
+                                    strcmp((s), "CONNECT") == 0 ? HTTPP_METHOD_CONNECT: \
+                                    strcmp((s), "OPTIONS") == 0 ? HTTPP_METHOD_OPTIONS: \
+                                    strcmp((s), "TRACE")   == 0 ? HTTPP_METHOD_TRACE  : \
+                                    strcmp((s), "PATCH")   == 0 ? HTTPP_METHOD_PATCH  : \
+                                                                  HTTPP_METHOD_UNKNOWN) \
 
 typedef struct {
     char* ptr;
@@ -88,28 +66,27 @@ typedef struct {
 
 typedef struct {
     httpp_headers_arr_t headers;
-    httpp_method_t method;
     httpp_span_t body;
     httpp_span_t route;
+    int method;
 } httpp_req_t;
 
 typedef struct {
     httpp_headers_arr_t headers;
-    httpp_status_t code;
     httpp_span_t body;
+    int code;
 } httpp_res_t;
 
-const char* httpp_method_to_string(httpp_method_t m);
-const char* httpp_status_to_string(httpp_status_t s);
+const char* httpp_method_to_string(int method);
+const char* httpp_status_to_string(int status_code);
 char* httpp_span_to_str(httpp_span_t* span);
 
 int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest);
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len);
-
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header);
 httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
-
 httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value);
+
 void httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len);
 void httpp_res_free_added(httpp_res_t* res);
 char* httpp_res_to_raw(httpp_res_t* res);
@@ -135,8 +112,7 @@ static inline void httpp_init_req(httpp_req_t* dest, httpp_header_t* headers_arr
 
 static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr, size_t headers_capacity)
 {
-    dest->code = Unspecified;
-
+    dest->code = -1;
     dest->headers.arr = headers_arr;
     dest->headers.capacity = headers_capacity;
     dest->headers.length = 0;
@@ -144,27 +120,129 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
 
 #ifdef HTTPP_IMPLEMENTATION
 
-#define ltrim(str) do {                                                         \
-    while ((*(str) && *(str) == ' ') || (*(str) == '\r') || (*(str) == '\n')) { \
-        (str)++;                                                                \
-    }                                                                           \
+// Originial isspace is kinda slow...
+#define __isspace(c) ((c) == ' ') || ((c) == '\r') || ((c) == '\n')
+
+#define ltrim(str) do {                    \
+    while (*(str) && __isspace(*(str))) {  \
+        (str)++;                           \
+    }                                      \
     } while (0)
 
 
-#define ltrim_buf(str, len) do {                                                \
-    while ((*(str) && *(str) == ' ') || (*(str) == '\r') || (*(str) == '\n')) { \
-        (str)++;                                                                \
-        (len)--;                                                                \
-    }                                                                           \
+#define ltrim_buf(str, len) do {          \
+    while (*(str) && __isspace(*(str))) { \
+        (str)++;                          \
+        (len)--;                          \
+    }                                     \
     } while (0)
 
-const char* httpp_method_to_string(httpp_method_t m) 
+static char* __strdup(char* str) 
 {
-    switch (m) {
-        case GET:       return "GET";
-        case POST:      return "POST"; 
-        case DELETE:    return "DELETE"; 
-        default:        return "UNKNOWN";
+    if (!str)
+        return NULL;
+
+    size_t n = strlen(str) + 1;
+    char* dupped = (char*) malloc(n);
+    return dupped ? (char*) memcpy(dupped, str, n) : NULL;
+}
+
+const char* httpp_method_to_string(int method) 
+{
+    switch (method) {
+        case HTTPP_METHOD_GET:      return "GET";
+        case HTTPP_METHOD_HEAD:     return "HEAD";
+        case HTTPP_METHOD_POST:     return "POST";
+        case HTTPP_METHOD_PUT:      return "PUT";
+        case HTTPP_METHOD_DELETE:   return "DELETE";
+        case HTTPP_METHOD_CONNECT:  return "CONNECT";
+        case HTTPP_METHOD_OPTIONS:  return "OPTIONS";
+        case HTTPP_METHOD_TRACE:    return "TRACE";
+        case HTTPP_METHOD_PATCH:    return "PATCH";
+
+        case HTTPP_METHOD_UNKNOWN:
+        default:                    return "UNKNOWN";
+    }
+}
+
+const char* httpp_status_to_string(int status_code) 
+{
+    switch (status_code) {
+        // Informational
+        case 100: return "Continue";
+        case 101: return "Switching Protocols";
+        case 102: return "Processing";
+        case 103: return "Early Hints";
+
+        // Successful
+        case 200: return "OK";
+        case 201: return "Created";
+        case 202: return "Accepted";
+        case 203: return "Non-Authoritative Information";
+        case 204: return "No Content";
+        case 205: return "Reset Content";
+        case 206: return "Partial Content";
+        case 207: return "Multi-Status";
+        case 208: return "Already Reported";
+        case 226: return "IM Used";
+
+        // Redirection
+        case 300: return "Multiple Choices";
+        case 301: return "Moved Permanently";
+        case 302: return "Found";
+        case 303: return "See Other";
+        case 304: return "Not Modified";
+        case 305: return "Use Proxy";
+        case 306: return "Unused";
+        case 307: return "Temporary Redirect";
+        case 308: return "Permanent Redirect";
+
+        // Client Error
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 402: return "Payment Required";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 406: return "Not Acceptable";
+        case 407: return "Proxy Authentication Required";
+        case 408: return "Request Timeout";
+        case 409: return "Conflict";
+        case 410: return "Gone";
+        case 411: return "Length Required";
+        case 412: return "Precondition Failed";
+        case 413: return "Content Too Large";
+        case 414: return "URI Too Long";
+        case 415: return "Unsupported Media Type";
+        case 416: return "Range Not Satisfiable";
+        case 417: return "Expectation Failed";
+        case 418: return "I'm a teapot";
+        case 421: return "Misdirected Request";
+        case 422: return "Unprocessable Content";
+        case 423: return "Locked";
+        case 424: return "Failed Dependency";
+        case 425: return "Too Early";
+        case 426: return "Upgrade Required";
+        case 428: return "Precondition Required";
+        case 429: return "Too Many Requests";
+        case 431: return "Request Header Fields Too Large";
+        case 451: return "Unavailable For Legal Reasons";
+
+        // Server Error 
+        case 500: return "Internal Server Error";
+        case 501: return "Not Implemented";
+        case 502: return "Bad Gateway";
+        case 503: return "Service Unavailable";
+        case 504: return "Gateway Timeout";
+        case 505: return "HTTP Version Not Supported";
+        case 506: return "Variant Also Negotiates";
+        case 507: return "Insufficient Storage";
+        case 508: return "Loop Detected";
+        case 510: return "Not Extended";
+        case 511: return "Network Authentication Required";
+
+        case -1:
+        default: return "Unspecified";
     }
 }
 
@@ -178,43 +256,6 @@ char* httpp_span_to_str(httpp_span_t* span)
     memcpy(out, span->ptr, span->length);
     out[span->length] = '\0';
     return out;
-}
-
-const char* httpp_status_to_string(httpp_status_t s) 
-{
-    switch (s) {
-        case Continue:                   return "Continue";
-        case Switching_Protocols:        return "Switching Protocols";
-
-        case Ok:                         return "OK";
-        case Created:                    return "Created";
-        case Accepted:                   return "Accepted";
-
-        case Multiple_Choices:           return "Multiple Choices";
-        case Moved_Permanently:          return "Moved Permanently";
-        case Found:                      return "Found";
-        case See_Other:                  return "See Other";
-        case Not_Modified:               return "Not Modified";
-        case Use_Proxy:                  return "Use Proxy";
-        case Temporary_Redirect:         return "Temporary Redirect";
-        case Permanent_Redirect:         return "Permanent Redirect";
-
-        case Bad_Request:                return "Bad Request";
-        case Unauthorized:               return "Unauthorized";
-        case Payment_Required:           return "Payment Required";
-        case Forbidden:                  return "Forbidden";
-        case Not_Found:                  return "Not Found";
-
-        case Internal_Server_Error:      return "Internal Server Error";
-        case Not_Implemented:            return "Not Implemented";
-        case Bad_Gateway:                return "Bad Gateway";
-        case Service_Unavailable:        return "Service Unavailable";
-        case Gateway_Timeout:            return "Gateway Timeout";
-        case HTTP_Version_Not_Supported: return "HTTP Version Not Supported";
-
-        case Unspecified:
-        default:                         return "Unspecified";
-    }
 }
 
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header)
@@ -253,11 +294,11 @@ httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value)
     if (!name || !value) 
         return NULL;
     
-    char* mname = strdup(name);
+    char* mname = __strdup(name);
     if (!mname)
         return NULL;
 
-    char* mvalue = strdup(value);
+    char* mvalue = __strdup(value);
     if (!mvalue) {
         free(mname);
         return NULL;
@@ -327,7 +368,7 @@ static int parse_start_line(char** itr, httpp_req_t* dest)
     if (strcmp(version_buf, HTTPP_SUPPORTED_VERSION) != 0)
         return 1;
 
-    dest->method = (httpp_method_t) httpp_string_to_method(method_buf);
+    dest->method = httpp_string_to_method(method_buf);
     dest->route = route;
 
     ltrim(*itr);
@@ -337,7 +378,7 @@ static int parse_start_line(char** itr, httpp_req_t* dest)
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len)
 {
     // RFC says that header starting with whitespace or any other non printable ascii should be rejected.
-    if (*line == ' ' || *line == '\r' || *line == '\n')
+    if (__isspace(*line))
         return NULL;
 
     char* colon = (char*) memchr(line, ':', content_len);
@@ -401,7 +442,7 @@ char* httpp_res_to_raw(httpp_res_t* res)
     if (res == NULL)
         return NULL; 
 
-    if (res->code == -1 || (int) res->code > 999)
+    if (res->code == -1 || res->code > 600)
         return NULL;
 
     const char* status_msg = httpp_status_to_string(res->code);
@@ -468,7 +509,8 @@ char* httpp_res_to_raw(httpp_res_t* res)
 }
 
 #endif // HTTPP_IMPLEMENTATION
-#endif // _HTTPP_H_
+#endif // _HTTPP_HEADER
+
 /*
 * MIT License
 * 

@@ -22,7 +22,7 @@ int main()
     httpp_parse_request(req, strlen(req), &parsed); // Parse the request!
 
     printf("%s\n", parsed.body.ptr); // Pointer to the beginning of the body
-    printf("%i\n", parsed.method); // Method is an enum!
+    printf("%i\n", parsed.method);
 
     const char* method = httpp_method_to_string(parsed.method); // Method as string (e.g POST)
     printf("%s\n", method); 
@@ -31,16 +31,16 @@ int main()
     // Httpp stores pointers to the conentent in your buffer.
     // Each string is storred as "span" or a string view. 
     // to convert it to a null terminated string (malloc'd), use this:
-    char* name = httpp_span_to_str(&host->name);
-    printf("%s\n", name);
+    char* value = httpp_span_to_str(&host->value);
+    printf("%s\n", value);
 
-    free(name); // Dont forget to free it when you're done
+    free(value); // Dont forget to free it when you're done
 
     httpp_res_t response;
     httpp_header_t response_headers[2]; 
     httpp_init_res(&response, response_headers, 2);
 
-    response.code = Ok; // or 200
+    response.code = 200;
     httpp_res_add_header(&response, "Host", "somehost.some.where");
     httpp_header_t* status = httpp_res_add_header(&response, "Status", "ok");
     // If you try to add more headers than the capacity is, httpp_add_header will return NULL
