@@ -7,7 +7,9 @@
  * (https://en.wikipedia.org/wiki/HTTP_pipelining#Implementation_status)
  * 
  * TODO Chunked transfer is not really supported
- * TODO Folded headers aren't handled. 
+ *
+ * UPDATE: Folded headers are depricated and prohibited from RFC 7230, 2014
+ *   Current version will reject folded headers
  */
 
 #include <stddef.h>
@@ -128,11 +130,11 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
 // Originial isspace is kinda slow...
 #define __isspace(c) ( (((c) == ' ') || ((c) == '\r') || ((c) == '\n') || ((c) == '\t')) )
 
-#define ltrim(str, len) do {                  \
-        while (*(str) && __isspace(*(str))) { \
-            (str)++;                          \
-            (len)--;                          \
-        }                                     \
+#define ltrim(str, len) do {                             \
+        while (*(str) && len > 0 && __isspace(*(str))) { \
+            (str)++;                                     \
+            (len)--;                                     \
+        }                                                \
     } while (0)
 
 #define setstr(dest, src, len) do {     \
@@ -338,7 +340,7 @@ void httpp_res_free_added(httpp_res_t* res)
     }
 }
 
-inline char* chop(char until, httpp_span_t* to, char* from, size_t from_len) 
+static inline char* chop(char until, httpp_span_t* to, char* from, size_t from_len) 
 {
     to->ptr = from;
     char* delim = (char*) memchr(from, until, from_len);
@@ -412,6 +414,9 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t
     size_t value_len = content_len - name_len - 1;
 
     ltrim(value_start, value_len);
+    
+    if (value_len > content_len)
+        return NULL; // Just in case
 
     httpp_span_t name = {line, name_len, false};
     httpp_span_t value = {value_start, value_len, false};
@@ -421,9 +426,12 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t
 
 int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
 {
-    if (n <= 0 || buf == NULL || dest == NULL)
-        return 0;
+    if (buf == NULL || dest == NULL)
+        return -1;
     
+    if (n == 0)
+        return 0;
+
     char* itr = buf;
     char* end = buf + n;
     int   offset;
