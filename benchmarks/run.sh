@@ -2,7 +2,6 @@ if [ ! -d "http-parser" ] || [ ! -d "picohttpparser" ] || [ ! -e "httppv1.h" ] |
     git clone https://github.com/nodejs/http-parser http-parser
     git clone https://github.com/h2o/picohttpparser.git picohttpparser
     wget -O httppv1.h https://github.com/cebem1nt/httpp/releases/download/1.0.0/httpp.h
-    cp ../httpp.h httppv2.h
 fi
 
 if [ -n "$1" ]; then
@@ -36,4 +35,3 @@ sleep 1
 
 echo "Benchmarking picohttpparser..."
 ./picohttpparser.out
-

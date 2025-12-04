@@ -6,4 +6,3 @@ benchmarks/http-parser
 benchmarks/picohttpparser
 benchmarks/httpp.h
 benchmarks/httppv1.h
-benchmarks/httppv2.h
