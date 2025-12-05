@@ -95,14 +95,14 @@ Benchmarked with the following request (adapted for each one from [picohttp](htt
     "\r\n"
 ```
 
-![Elapsed time](./benchmarks/1.svg)
+![Elapsed time](./benchmarks/1.png)
 
 | httppv1     | [http-parser](https://github.com/nodejs/http-parser) | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
 | ----------- | ----------- | ----------- | -------------- |
-| `2.788205s` | `9.055873s` | `0.964826s` | `2.035271s`    |
+| `2.788205s` | `9.055873s` | `1.114025s` | `2.035271s`    |
 
-![Requests per second](./benchmarks/2.svg)
+![Requests per second](./benchmarks/2.png)
 
 | httppv1     | [http-parser](https://github.com/nodejs/http-parser) | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
 | ----------- | ------------ | ----------- | -------------- |
-| 3586537.12  | 1104255.77   | 10364561.00 | 4913351.09     |
+| 3586537.12  | 1104255.77   | 8976462.46  | 4913351.09     |
