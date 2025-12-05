@@ -38,7 +38,7 @@ double benchmark()
 
         httpp_init_req(&req, arr, HTTPP_DEFAULT_HEADERS_ARR_CAP);
         
-        assert(httpp_parse_request(raw, raw_len, &req) == raw_len);
+        assert(httpp_parse_request(raw, raw_len, &req) + req.body.length == raw_len);
     }
     end = (double)clock()/CLOCKS_PER_SEC;
     return end - start;

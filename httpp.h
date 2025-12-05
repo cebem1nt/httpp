@@ -2,14 +2,37 @@
 #define _HTTPP_HEADER
 
 /*
- * Tiny header only http parser library for http 1/1 version 
- * Pipelined requests are not supported because nobody realy cares about them 
- * (https://en.wikipedia.org/wiki/HTTP_pipelining#Implementation_status)
- * 
- * TODO Chunked transfer is not really supported
+ * Tiny header only http parser library for http 1/1 version
  *
- * UPDATE: Folded headers are depricated and prohibited from RFC 7230, 2014
- *   Current version will reject folded headers
+ * Pipelined requests are not handled well because nobody realy cares about them.
+ * (https://en.wikipedia.org/wiki/HTTP_pipelining#Implementation_status)
+ *
+ * UPDATE:
+ *   Chunked transfer should be handled on the server side by checking whenever the
+ *   necessary header persist, based on that, do next steps. there is nothing
+ *   the parser can do about it without bloating the code.
+ *
+ * UPDATE: 
+ *   Folded headers will be rejected by this parser
+ *
+ * NOTE:
+ *  By default httpp_parse_request, for the simplicity and speed, will use 
+ *  sort of "Lazy" body splitting, meaning that whenever parser encounters 
+ *  single "\r\n", it will handle anything after it as the body of 
+ *  a request. This might not be desired behaviour in case if caller's buffer
+ *  contains more than one request. If that's the case:
+ *
+ *  #define HTTPP_CONSIDER_CONTENT_LENGTH
+ *
+ *  This will make httpp_parse_request set body.length to the value 
+ *  of Content-Length header with necessary bounds checks. This might
+ *  suffer on performance a little bit.
+ *
+ *  Important note:
+ *  This potentially introduces a missbehave: if Content-Length is bigger than
+ *  the actual length of body and caller's buffer still has elements, then 
+ *  beginning of the next potential request will be parsed as the body continuation 
+ *  of the previous one. 
  */
 
 #include <stddef.h>
@@ -17,7 +40,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <strings.h>  /* strncasecmp (-std=c11) */
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+# include <strings.h>  /* strncasecmp (-std=c11) */
+#endif
 
 #define HTTPP_DEFAULT_HEADERS_ARR_CAP 20
 
@@ -84,21 +110,38 @@ typedef struct {
 
 const char* httpp_method_to_string(int method);
 const char* httpp_status_to_string(int status_code);
+
 char* httpp_span_to_str(httpp_span_t* span);
+
+bool httpp_span_eq(httpp_span_t* span, const char* to);
+bool httpp_span_case_eq(httpp_span_t* span, const char* to);
 
 int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest);
 int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest);
+
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len);
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header);
 httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
 httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value);
 
-void httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len);
 void httpp_res_free_added(httpp_res_t* res);
 char* httpp_res_to_raw(httpp_res_t* res);
 
 #define httpp_find_header(req_or_res, name) \
     (httpp_headers_arr_find(&(req_or_res).headers, name))
+
+#define httpp_res_set_body(res, body_ptr, body_len) \
+   (res.body = (httpp_span_t){body_ptr, body_len, false})
+
+#define HTTPP_NEW_REQ(name, arr_cap) \
+    httpp_req_t name; \
+    httpp_header_t name##_headers[arr_cap]; \
+    httpp_init_req(&name, name##_headers, arr_cap)
+
+#define HTTPP_NEW_RES(name, arr_cap) \
+    httpp_res_t name; \
+    httpp_header_t name##_headers[arr_cap]; \
+    httpp_init_res(&name, name##_headers, arr_cap)
 
 static inline void httpp_init_span(httpp_span_t* span) 
 {
@@ -128,18 +171,18 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
 #ifdef HTTPP_IMPLEMENTATION
 
 // Originial isspace is kinda slow...
-#define __isspace(c) ( (((c) == ' ') || ((c) == '\r') || ((c) == '\n') || ((c) == '\t')) )
+#define __ISSPACE(c) ( (((c) == ' ') || ((c) == '\r') || ((c) == '\n') || ((c) == '\t')) )
 
-#define ltrim(str, len) do {                             \
-        while (*(str) && len > 0 && __isspace(*(str))) { \
-            (str)++;                                     \
-            (len)--;                                     \
-        }                                                \
+#define LTRIM(str, len) do {                               \
+        while (*(str) && (len) > 0 && __ISSPACE(*(str))) { \
+            (str)++;                                       \
+            (len)--;                                       \
+        }                                                  \
     } while (0)
 
-#define setstr(dest, src, len) do {     \
-        memcpy(dest, (src), (len));     \
-        dest[(len)] = '\0';             \
+#define SETSTR(dest, src, len) do { \
+        memcpy(dest, (src), (len)); \
+        dest[(len)] = '\0';         \
     } while (0)
 
 static char* __strdup(const char* str) 
@@ -263,8 +306,34 @@ char* httpp_span_to_str(httpp_span_t* span)
     if (!out)
         return NULL;
     
-    setstr(out, span->ptr, span->length);
+    SETSTR(out, span->ptr, span->length);
     return out;
+}
+
+bool httpp_span_eq(httpp_span_t* span, const char* to)
+{
+    if (!span || !span->ptr || to == NULL) 
+        return false;
+    
+    size_t expected = strlen(to);
+
+    if (span->length != expected) 
+        return false;
+
+    return (strncmp(span->ptr, to, expected) == 0);
+}
+
+bool httpp_span_case_eq(httpp_span_t* span, const char* to) 
+{
+    if (!span || !span->ptr || to == NULL) 
+        return false;
+    
+    size_t expected = strlen(to);
+
+    if (span->length != expected) 
+        return false;
+
+    return (strncasecmp(span->ptr, to, expected) == 0);
 }
 
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header)
@@ -331,7 +400,6 @@ httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value)
 void httpp_res_free_added(httpp_res_t* res)
 {
     for (size_t i = 0; i < res->headers.length; i++) {
-        
         if (res->headers.arr[i].name.is_owned)
             free(res->headers.arr[i].name.ptr);
 
@@ -368,7 +436,7 @@ int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest)
     if (delim - itr >= HTTPP_MAX_METHOD_LENGTH + 1)
         return -1;
 
-    setstr(method_buf, itr, delim - itr);
+    SETSTR(method_buf, itr, delim - itr);
     itr = delim + 1;
 
     if ((itr = chop(' ', &route, itr, n - (itr - buf))) == NULL)
@@ -401,7 +469,7 @@ int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest)
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len)
 {
     // RFC says that header starting with whitespace or any other non printable ascii should be rejected.
-    if (__isspace(*line))
+    if (__ISSPACE(*line))
         return NULL;
 
     char* colon = (char*) memchr(line, ':', content_len);
@@ -413,7 +481,7 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t
     char* value_start = colon + 1;
     size_t value_len = content_len - name_len - 1;
 
-    ltrim(value_start, value_len);
+    LTRIM(value_start, value_len);
     
     if (value_len > content_len)
         return NULL; // Just in case
@@ -434,14 +502,20 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
 
     char* itr = buf;
     char* end = buf + n;
-    int   offset;
+    int   off;
 
-    if ((offset = httpp_parse_start_line(itr, n, dest)) == -1)
+#ifdef HTTPP_CONSIDER_CONTENT_LENGTH
+    size_t content_len;
+#endif
+
+    if ((off = httpp_parse_start_line(itr, n, dest)) == -1)
         return -1;
 
-    itr += offset;
+    itr += off;
     while (itr < end) {
+        httpp_header_t* parsed;
         char* delim = strstr(itr, HTTPP_DELIMITER);
+        
         if (!delim)
             break;
         
@@ -451,21 +525,31 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
             break;
         }
 
-        if (httpp_parse_header(&dest->headers, itr, line_size) == NULL)
+        if ((parsed = httpp_parse_header(&dest->headers, itr, line_size)) == NULL)
             return -1;
 
+#ifdef HTTPP_CONSIDER_CONTENT_LENGTH
+        if (httpp_span_case_eq(&parsed->name, "content-length")) {
+            char* val = httpp_span_to_str(&parsed->value);
+            content_len = atol(val);
+            free(val);
+        }
+#endif
         itr = delim + HTTPP_DELIMITER_LEN;
     }
 
     dest->body.ptr = itr; // Itr now points at the beginning of the body
+
+#ifdef HTTPP_CONSIDER_CONTENT_LENGTH
+    if (content_len <= n - (itr - buf))
+        dest->body.length = content_len;
+    else
+        return -1;
+#else
     dest->body.length = n - (itr - buf);
+#endif
 
-    return n;
-}
-
-void httpp_res_set_body(httpp_res_t* res, char* body_ptr, size_t body_len)
-{
-    res->body = (httpp_span_t){body_ptr, body_len};
+    return itr - buf;
 }
 
 char* httpp_res_to_raw(httpp_res_t* res)
@@ -532,7 +616,7 @@ char* httpp_res_to_raw(httpp_res_t* res)
 
     if (res->body.length) {
         char* end = out + offset + HTTPP_DELIMITER_LEN;
-        setstr(end, res->body.ptr, res->body.length);
+        SETSTR(end, res->body.ptr, res->body.length);
     }
         
     return out;

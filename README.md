@@ -15,7 +15,7 @@ char* req =
     "Host: api.example.com\r\n"
     "User-Agent: MyClient/1.0\r\n"
     "Content-Type: application/json\r\n"
-    "Content-Length: 48\r\n"
+    "Content-Length: 44\r\n"
     "\r\n"
     "{\"name\":\"Widget\",\"quantity\":10,\"price\":9.99}";
 
@@ -24,10 +24,13 @@ int main()
     httpp_req_t parsed;
     httpp_header_t headers[HTTPP_DEFAULT_HEADERS_ARR_CAP]; // Array for parsed headers
     httpp_init_req(&parsed, headers, HTTPP_DEFAULT_HEADERS_ARR_CAP); // Initialize the request on stack
+    // Alternatively, use this fancy macro:
+    // HTTPP_NEW_REQ(parsed, HTTPP_DEFAULT_HEADERS_ARR_CAP);
 
-    httpp_parse_request(req, strlen(req), &parsed); // Parse the request!
+    httpp_parse_request(req, strlen(req), &parsed); // Parse the request
 
     printf("%s\n", parsed.body.ptr); // Pointer to the beginning of the body
+    printf("%lu\n", parsed.body.length);
     printf("%i\n", parsed.method);
 
     const char* method = httpp_method_to_string(parsed.method); // Method as string (e.g POST)
@@ -52,7 +55,7 @@ int main()
     // If you try to add more headers than the capacity is, httpp_add_header will return NULL
 
     char* body = "Some body";
-    httpp_res_set_body(&response, body, strlen(body)); // httpp_res_set_body sets the pointer to body, it doesn't copy it 
+    httpp_res_set_body(response, body, strlen(body)); // httpp_res_set_body sets the pointer to body, it doesn't copy it 
 
     char* raw = httpp_res_to_raw(&response); // Convert to a malloc'd raw string 
 

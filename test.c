@@ -25,16 +25,6 @@ const char* current_test_name = NULL;
     } \
 } while (0)
 
-#define NEW_REQ(name, arr_cap) \
-    httpp_req_t name; \
-    httpp_header_t name##_headers[arr_cap]; \
-    httpp_init_req(&name, name##_headers, arr_cap)
-
-#define NEW_RES(name, arr_cap) \
-    httpp_res_t name; \
-    httpp_header_t name##_headers[arr_cap]; \
-    httpp_init_res(&name, name##_headers, arr_cap)
-
 #define ASSERT_EQ_STR(a, b) ASSERT((a) != NULL && (b) != NULL && strcmp((a), (b)) == 0)
 #define ASSERT_EQ_INT(a, b) ASSERT((a) == (b))
 #define ARR_LEN(arr) (sizeof(arr) / sizeof(arr[0]))
@@ -62,32 +52,19 @@ char* mkbuf(const char* s)
     return buf;
 }
 
-bool span_eq(httpp_span_t* span, const char* ref) 
-{
-    if (!span || !span->ptr || ref == NULL) 
-        return false;
-    
-    size_t expected = strlen(ref);
-
-    if (span->length != expected) 
-        return false;
-
-    return (strncmp(span->ptr, ref, expected) == 0);
-}
-
 void test_start_line_basic() 
 {
     TEST("Start line - basic GET") {
         char* raw = 
             "GET /hello HTTP/1.1\r\n";
 
-        NEW_REQ(req, HTTPP_DEFAULT_HEADERS_ARR_CAP);
+        HTTPP_NEW_REQ(req, HTTPP_DEFAULT_HEADERS_ARR_CAP);
         
         int off = httpp_parse_start_line(raw, strlen(raw), &req);
         ASSERT(off > 0);
         ASSERT_EQ_INT(req.method, HTTPP_METHOD_GET);
-        ASSERT(span_eq(&req.route, "/hello"));
-        ASSERT(span_eq(&req.version, HTTPP_SUPPORTED_VERSION));
+        ASSERT(httpp_span_eq(&req.route, "/hello"));
+        ASSERT(httpp_span_eq(&req.version, HTTPP_SUPPORTED_VERSION));
     }
 }
 
@@ -101,23 +78,23 @@ void test_headers_and_body()
             "\r\n"
             "BODY CONTENT";
 
-        NEW_REQ(req, 10);
+        HTTPP_NEW_REQ(req, 10);
 
         int off = httpp_parse_request(raw, strlen(raw), &req);
 
-        ASSERT(off == (int) strlen(raw));
+        ASSERT(off + req.body.length == (int) strlen(raw));
         ASSERT_EQ_INT(req.method, HTTPP_METHOD_POST);
-        ASSERT(span_eq(&req.route, "/upload"));
-        ASSERT(span_eq(&req.version, HTTPP_SUPPORTED_VERSION));
+        ASSERT(httpp_span_eq(&req.route, "/upload"));
+        ASSERT(httpp_span_eq(&req.version, HTTPP_SUPPORTED_VERSION));
 
         httpp_header_t* h = httpp_find_header(req, "host");
         ASSERT(h != NULL);
-        ASSERT(span_eq(&h->value, "example.com"));
+        ASSERT(httpp_span_eq(&h->value, "example.com"));
 
         httpp_header_t* h2 = httpp_find_header(req, "x-custom");
         ASSERT(h2 != NULL);
-        ASSERT(span_eq(&h2->value, "value with leading spaces"));
-        ASSERT(span_eq(&req.body, "BODY CONTENT"));
+        ASSERT(httpp_span_eq(&h2->value, "value with leading spaces"));
+        ASSERT(httpp_span_eq(&req.body, "BODY CONTENT"));
     }
 }
 
@@ -125,13 +102,13 @@ void test_invalid_start_line()
 {
     TEST("Invalid start lines rejected") {
         char* raw1 = "BADMETHOD / HTTP/1.1\r\n";
-        NEW_REQ(req1, 10);
+        HTTPP_NEW_REQ(req1, 10);
 
         int r1 = httpp_parse_start_line(raw1, strlen(raw1), &req1);
         ASSERT(r1 == -1 || req1.method == HTTPP_METHOD_UNKNOWN);
 
         char* raw2 = "GET / HTTP/1.0\r\n";
-        NEW_REQ(req2, 10);
+        HTTPP_NEW_REQ(req2, 10);
 
         int r2 = httpp_parse_start_line(raw2, strlen(raw2), &req2);
         ASSERT(r2 == -1);
@@ -141,12 +118,12 @@ void test_invalid_start_line()
 void test_response_builder()
 {
     TEST("Response builder and formatting") {
-        NEW_RES(res, 10);
+        HTTPP_NEW_RES(res, 10);
         char* body = "Hello!";
 
         res.code = 200;
         httpp_res_add_header(&res, "Content-Type", "text/plain");
-        httpp_res_set_body(&res, body, strlen(body));
+        httpp_res_set_body(res, body, strlen(body));
         char* raw = httpp_res_to_raw(&res);
         
         ASSERT(raw != NULL);
@@ -199,13 +176,13 @@ void test_start_line_variations()
     TEST("Start line variations (table)") {
         for (size_t i = 0; i < ARR_LEN(table); i++) {
             char* raw = table[i].line;
-            NEW_REQ(req, 0);
+            HTTPP_NEW_REQ(req, 0);
 
             int off = httpp_parse_start_line(raw, strlen(raw), &req);
 
             ASSERT(off > 0);
             ASSERT_EQ_INT(req.method, table[i].method);
-            ASSERT(span_eq(&req.route, table[i].route));
+            ASSERT(httpp_span_eq(&req.route, table[i].route));
         }
     }
 }
@@ -300,16 +277,16 @@ void test_valid_req_variations()
     TEST("Start valid requests variations (table)") {
         for (size_t i = 0; i < ARR_LEN(table); i++) {
             char* raw = table[i].raw;
-            NEW_REQ(req, 10);
+            HTTPP_NEW_REQ(req, 10);
 
             int off = httpp_parse_request(raw, strlen(raw), &req);
             
             ASSERT(off > 0);
             ASSERT_EQ_INT(req.method, table[i].method);
-            ASSERT(span_eq(&req.route, table[i].route));
+            ASSERT(httpp_span_eq(&req.route, table[i].route));
             ASSERT(req.headers.length == table[i].headers_len);
             ASSERT(req.body.length == table[i].body_len);
-            ASSERT(span_eq(&req.body, table[i].body));
+            ASSERT(httpp_span_eq(&req.body, table[i].body));
         }
     }
 }
@@ -358,7 +335,7 @@ void test_invalid_req_variations()
     TEST("Start invalid requests variations") {
         for (size_t i = 0; i < ARR_LEN(table); i++) {
             char* raw = table[i].raw;
-            NEW_REQ(req, 10);
+            HTTPP_NEW_REQ(req, 10);
 
             int off = httpp_parse_request(raw, strlen(raw), &req);
             ASSERT(off == -1);
@@ -369,7 +346,7 @@ void test_invalid_req_variations()
 void test_totally_invalid() 
 {
     TEST("Totally invalid calls") {
-        NEW_REQ(req, 0);
+        HTTPP_NEW_REQ(req, 0);
         int ret;
 
         ret = httpp_parse_request(NULL, 10, &req);
@@ -399,14 +376,14 @@ void test_binary_body()
         memcpy(raw, hdr, sizeof(hdr) - 1);
         memcpy(raw + (sizeof(hdr) - 1), body_bytes, sizeof(body_bytes));
 
-        NEW_REQ(reqA, 4);
+        HTTPP_NEW_REQ(req, 4);
 
-        int ret = httpp_parse_request(raw, raw_len, &reqA);
+        int ret = httpp_parse_request(raw, raw_len, &req);
 
-        ASSERT(ret == raw_len);
-        ASSERT(reqA.method == HTTPP_METHOD_POST);
-        ASSERT(reqA.body.length == 6);
-        ASSERT(memcmp(reqA.body.ptr, body_bytes, 6) == 0);
+        ASSERT(ret + req.body.length == raw_len);
+        ASSERT(req.method == HTTPP_METHOD_POST);
+        ASSERT(req.body.length == 6);
+        ASSERT(memcmp(req.body.ptr, body_bytes, 6) == 0);
 
         free(raw);
     }
@@ -425,9 +402,9 @@ void test_edge()
 
         int ret;
 
-        NEW_REQ(case1_parsed, 10);
-        NEW_REQ(case2_parsed, 10);
-        NEW_REQ(case3_parsed, 10);
+        HTTPP_NEW_REQ(case1_parsed, 10);
+        HTTPP_NEW_REQ(case2_parsed, 10);
+        HTTPP_NEW_REQ(case3_parsed, 10);
 
         ret = httpp_parse_request(case1, strlen(case1), &case1_parsed);
         ASSERT(ret == -1);
