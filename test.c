@@ -120,16 +120,18 @@ void test_response_builder()
     TEST("Response builder and formatting") {
         HTTPP_NEW_RES(res, 10);
         char* body = "Hello!";
+        size_t raw_len;
 
         res.code = 200;
         httpp_res_add_header(&res, "Content-Type", "text/plain");
         httpp_res_set_body(res, body, strlen(body));
-        char* raw = httpp_res_to_raw(&res);
+        char* raw = httpp_res_to_raw(&res, &raw_len);
         
         ASSERT(raw != NULL);
         ASSERT(strstr(raw, "HTTP/1.1 200 OK\r\n") != NULL);
         ASSERT(strstr(raw, "Content-Type: text/plain\r\n") != NULL);
         ASSERT(strstr(raw, "\r\n\r\nHello!") != NULL);
+        ASSERT(strlen(raw) == raw_len);
 
         free(raw);
         httpp_res_free_added(&res);

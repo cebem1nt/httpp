@@ -4,6 +4,7 @@ Tiny, fast, simple, yet useful header only HTTP/1.1 requests parser for C. httpp
 ## API
 
 ```c
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -57,11 +58,12 @@ int main()
     char* body = "Some body";
     httpp_res_set_body(response, body, strlen(body)); // httpp_res_set_body sets the pointer to body, it doesn't copy it 
 
-    char* raw = httpp_res_to_raw(&response); // Convert to a malloc'd raw string 
+    size_t raw_len;
+    char* raw = httpp_res_to_raw(&response, &raw_len); // Convert to a malloc'd raw string 
 
     printf("\nComposed response: \n");
     printf("----\n%s\n----\n", raw);  // Or write it to a socket
-    printf("Body length = %lu\n", response.body.length);
+    printf("Response length = %lu\n", raw_len);
 
     free(raw);
 

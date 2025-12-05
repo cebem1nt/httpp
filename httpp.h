@@ -108,24 +108,67 @@ typedef struct {
     int code;
 } httpp_res_t;
 
+typedef struct {
+    char*  raw;
+    size_t raw_len;
+} httpp_raw_res_t;
+
 const char* httpp_method_to_string(int method);
 const char* httpp_status_to_string(int status_code);
 
+// Converts httpp_span_t to a malloc'd string. Caller must free 
 char* httpp_span_to_str(httpp_span_t* span);
 
+// Checks is httpp_span_t equal to `to` 
 bool httpp_span_eq(httpp_span_t* span, const char* to);
+
+// Checks is httpp_span_t equal to `to` without case considering
 bool httpp_span_case_eq(httpp_span_t* span, const char* to);
 
+/*
+ * Parses the raw http request passed as `buf`. 
+ *   On failure returns -1.
+ * 
+ * On sucess returns offset from the beginning of `buf` to 
+ * the beginning of the dest->body.
+ */
 int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest);
+
+/* 
+ * Parses http request start line.
+ * http version mismatch is considered a failure
+ *   On failure returns -1. 
+ *
+ * On sucess returns offset from the beginning of `buf` to
+ * the end of the start line
+ */ 
 int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest);
 
+/*
+ * Parses http header string and appends it to `dest`
+ *   On failure returns NULL
+ * 
+ * `content_len` must be a length of the content of the line, meaning it 
+ * should not include the length of "\r\n", length of actual content only
+ * 
+ * On sucess returns a pointer to the last header in `dest` 
+ */
 httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t content_len);
+
+// Appends `header` to `hs`, On failure returns NULL, on sucess returns pointer to last header
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header);
+
+// Searches for a header with `name` in `hs`, On failure returns NULL, on sucess returns pointer to it
 httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
+
+// Converts `res` to it's malloc'd raw string representation. Sets final raw length to `out_len`
+char* httpp_res_to_raw(httpp_res_t* res, size_t* out_len);
+
+// Creates new header with strdupped name and value, and appends it to `res->headers`
 httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value);
 
+// Frees strdupped by httpp_res_add_header headers from `res` 
 void httpp_res_free_added(httpp_res_t* res);
-char* httpp_res_to_raw(httpp_res_t* res);
 
 #define httpp_find_header(req_or_res, name) \
     (httpp_headers_arr_find(&(req_or_res).headers, name))
@@ -552,7 +595,7 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
     return itr - buf;
 }
 
-char* httpp_res_to_raw(httpp_res_t* res)
+char* httpp_res_to_raw(httpp_res_t* res, size_t* out_len)
 {
     if (res == NULL)
         return NULL; 
@@ -618,7 +661,10 @@ char* httpp_res_to_raw(httpp_res_t* res)
         char* end = out + offset + HTTPP_DELIMITER_LEN;
         SETSTR(end, res->body.ptr, res->body.length);
     }
-        
+
+    if (out_len)  
+        *out_len = out_size - 1; // no '\0'
+
     return out;
 }
 
