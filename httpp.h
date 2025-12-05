@@ -548,7 +548,7 @@ int httpp_parse_request(char* buf, size_t n, httpp_req_t* dest)
     int   off;
 
 #ifdef HTTPP_CONSIDER_CONTENT_LENGTH
-    size_t content_len;
+    size_t content_len = 0;
 #endif
 
     if ((off = httpp_parse_start_line(itr, n, dest)) == -1)
