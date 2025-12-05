@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define HTTPP_TRIM_HEADER_VALUES
 #define HTTPP_IMPLEMENTATION
 #include "httpp.h"
 
@@ -74,7 +75,7 @@ void test_headers_and_body()
         char* raw =
             "POST /upload HTTP/1.1\r\n"
             "Host: example.com\r\n"
-            "X-Custom:   value with leading spaces\r\n"
+            "X-Custom:   value with spaces   \r\n"
             "\r\n"
             "BODY CONTENT";
 
@@ -93,7 +94,7 @@ void test_headers_and_body()
 
         httpp_header_t* h2 = httpp_find_header(req, "x-custom");
         ASSERT(h2 != NULL);
-        ASSERT(httpp_span_eq(&h2->value, "value with leading spaces"));
+        ASSERT(httpp_span_eq(&h2->value, "value with spaces"));
         ASSERT(httpp_span_eq(&req.body, "BODY CONTENT"));
     }
 }

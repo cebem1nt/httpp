@@ -2,9 +2,11 @@
 #define _HTTPP_HEADER
 
 /*
- * Tiny header only http parser library for http 1/1 version
+ * Tiny header only http parser library for http 1/1 version.
+ * To use this library:
+ *      #define HTTPP_IMPLEMENTATION 
  *
- * Pipelined requests are not handled well because nobody realy cares about them.
+ * Pipelined requests are not handled well because nobody really cares about them.
  * (https://en.wikipedia.org/wiki/HTTP_pipelining#Implementation_status)
  *
  * UPDATE:
@@ -33,6 +35,15 @@
  *  the actual length of body and caller's buffer still has elements, then 
  *  beginning of the next potential request will be parsed as the body continuation 
  *  of the previous one. 
+ * 
+ * OPTIONS:
+ *  By default httpp considers http version mismatch an error, to prevent this:
+ *      #define HTTPP_DONT_CHECK_VERSION
+ *  
+ *  By default httpp will only remove first optional whitespace after header name.
+ *  For general purpose it should be okay. If you want it to completely trim trailing
+ *  and leading whitespaces from header values:
+ *      #define HTTPP_TRIM_HEADER_VALUES
  */
 
 #include <stddef.h>
@@ -216,12 +227,22 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
 // Originial isspace is kinda slow...
 #define __ISSPACE(c) ( (((c) == ' ') || ((c) == '\r') || ((c) == '\n') || ((c) == '\t')) )
 
-#define LTRIM(str, len) do {                               \
-        while (*(str) && (len) > 0 && __ISSPACE(*(str))) { \
-            (str)++;                                       \
-            (len)--;                                       \
-        }                                                  \
-    } while (0)
+#define LTRIM(str, len) do {                                \
+    while ((len) > 0) {                                     \
+        if (!__ISSPACE(*str))                               \
+            break;                                          \
+        (str)++;                                            \
+        (len)--;                                            \
+    }                                                       \
+} while (0)
+
+#define RTRIM(str, len) do {                                \
+    while ((len) > 0) {                                     \
+        if (!__ISSPACE((str)[(len) - 1]))                   \
+            break;                                          \
+        (len)--;                                            \
+    }                                                       \
+} while (0)
 
 #define SETSTR(dest, src, len) do { \
         memcpy(dest, (src), (len)); \
@@ -499,8 +520,10 @@ int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest)
     if (version.length != HTTPP_SUPPORTED_VERSION_LEN)
         return -1;
 
+#ifndef HTTPP_DONT_CHECK_VERSION
     if (strncmp(version.ptr, HTTPP_SUPPORTED_VERSION, version.length) != 0)
         return -1;
+#endif
 
     dest->method = httpp_string_to_method(method_buf);
     dest->version = version;
@@ -524,8 +547,17 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t
     char* value_start = colon + 1;
     size_t value_len = content_len - name_len - 1;
 
+#ifdef HTTPP_TRIM_HEADER_VALUES
     LTRIM(value_start, value_len);
-    
+    RTRIM(value_start, value_len);
+#else
+    // Skip only first optional space
+    if (value_len > 0 && __ISSPACE(*value_start)) {
+        value_start++;
+        value_len--;
+    }
+#endif
+
     if (value_len > content_len)
         return NULL; // Just in case
 
