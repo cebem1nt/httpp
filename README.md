@@ -73,7 +73,7 @@ int main()
 ```
 
 ## Benchmark
-All benchmarks were compiled with -O3 flag using gcc _15.2.1 20251112_. Benchmarks were running on a Ryzen 7 with 4.79GHz peek frequency. The code can be found in `benchmarks` directory. Same benchmark was adapted for http-parser. Results of each one is the average of 5 runs.
+All benchmarks were compiled with gcc `15.2.1 20251112`. Benchmarks were running on a Ryzen 7 with 4.79GHz peek frequency. The code can be found in `benchmarks` directory. Results of each one is the average of 5 runs.
 
 Benchmarked with the following request (adapted for each one from [picohttp](https://github.com/h2o/picohttpparser))
 
@@ -95,14 +95,30 @@ Benchmarked with the following request (adapted for each one from [picohttp](htt
     "\r\n"
 ```
 
-![Elapsed time](./benchmarks/1.png)
+### -O0
 
-| httppv1     | [http-parser](https://github.com/nodejs/http-parser) | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
-| ----------- | ----------- | ----------- | -------------- |
-| `2.788205s` | `9.055873s` | `1.114025s` | `2.035271s`    |
+![Elapsed time](./benchmarks/1.svg)
 
-![Requests per second](./benchmarks/2.png)
+| httppv1     |   httppv2    | [picohttpparser](https://github.com/h2o/picohttpparser) |
+| ----------- |  ----------- | -------------- |
+| `4.980004s` |  `2.877346s` | `8.845915s`    |
 
-| httppv1     | [http-parser](https://github.com/nodejs/http-parser) | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
-| ----------- | ------------ | ----------- | -------------- |
-| 3586537.12  | 1104255.77   | 8976462.46  | 4913351.09     |
+![Requests per second](./benchmarks/2.svg)
+
+| httppv1     | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
+| ----------- | ----------- | -------------- |
+| 2008030.68  | 3475424.44  |  1130465.28    |
+
+### -O3
+
+![Elapsed time](./benchmarks/3.svg)
+
+| httppv1     |   httppv2    | [picohttpparser](https://github.com/h2o/picohttpparser) |
+| ----------- |  ----------- | -------------- |
+| `3.501595s` |  `1.124382s` | `2.538490s`    |
+
+![Requests per second](./benchmarks/4.svg)
+
+| httppv1     | httppv2     | [picohttpparser](https://github.com/h2o/picohttpparser) |
+| ----------- | ----------- | -------------- |
+| 2855841.74  | 8893776.12  | 3939350.39     |

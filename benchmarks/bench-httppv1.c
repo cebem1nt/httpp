@@ -45,11 +45,19 @@ double benchmark()
 
 int main()
 {
-    double total = 0.0;
+    double total = 0.0,
+           worse = 0.0,
+           best = 100.000;
 
     for (int i = 0; i < RUNS; i++) {
         double elapsed = benchmark();
         total += elapsed;
+        
+        if (elapsed < best)
+            best = elapsed;
+
+        if (elapsed > worse)
+            worse = elapsed;
 
         printf("Run %i:\n", i);
         printf(" Elapsed time: %f\n", elapsed);
@@ -57,7 +65,9 @@ int main()
     }
 
     printf("\nAverage elapsed time %f\n", total / RUNS);
+    printf("Best  run: %f\n", best);
+    printf("Worse run: %f\n", worse);
     printf("Average Requests per second ≈ %.2f\n\n", (double) ITERATIONS / (total / RUNS));
-    
+
     return 0;
 }
