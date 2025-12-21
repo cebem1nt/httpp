@@ -170,13 +170,13 @@ httpp_header_t* httpp_parse_header(httpp_headers_arr_t* dest, char* line, size_t
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header);
 
 // Searches for a header with `name` in `hs`, On failure returns NULL, on sucess returns pointer to it
-httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name);
+httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, const char* name);
 
 // Converts `res` to it's malloc'd raw string representation. Sets final raw length to `out_len`
 char* httpp_res_to_raw(httpp_res_t* res, size_t* out_len);
 
 // Creates new header with strdupped name and value, and appends it to `res->headers`
-httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value);
+httpp_header_t* httpp_res_add_header(httpp_res_t* res, const char* name, const char* value);
 
 // Frees strdupped by httpp_res_add_header headers from `res` 
 void httpp_res_free_added(httpp_res_t* res);
@@ -190,37 +190,12 @@ void httpp_res_free_added(httpp_res_t* res);
 #define HTTPP_NEW_REQ(name, arr_cap) \
     httpp_req_t name; \
     httpp_header_t name##_headers[arr_cap]; \
-    httpp_init_req(&name, name##_headers, arr_cap)
+    httpp_req_init(&name, name##_headers, arr_cap)
 
-#define HTTPP_NEW_RES(name, arr_cap) \
+#define HTTPP_NEW_RES(name, arr_cap, status) \
     httpp_res_t name; \
     httpp_header_t name##_headers[arr_cap]; \
-    httpp_init_res(&name, name##_headers, arr_cap)
-
-static inline void httpp_init_span(httpp_span_t* span) 
-{
-    span->ptr = NULL;
-    span->length = 0;
-    span->is_owned = false;
-}
-
-static inline void httpp_init_req(httpp_req_t* dest, httpp_header_t* headers_arr, size_t headers_capacity)
-{
-    httpp_init_span(&dest->route);
-    httpp_init_span(&dest->body);
-
-    dest->headers.arr = headers_arr;
-    dest->headers.capacity = headers_capacity;
-    dest->headers.length = 0;
-}
-
-static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr, size_t headers_capacity)
-{
-    dest->code = -1;
-    dest->headers.arr = headers_arr;
-    dest->headers.capacity = headers_capacity;
-    dest->headers.length = 0;
-}
+    httpp_res_init(&name, name##_headers, arr_cap, status)
 
 #ifdef HTTPP_IMPLEMENTATION
 
@@ -246,8 +221,36 @@ static inline void httpp_init_res(httpp_res_t* dest, httpp_header_t* headers_arr
 
 #define SETSTR(dest, src, len) do { \
         memcpy(dest, (src), (len)); \
-        dest[(len)] = '\0';         \
+        (dest)[(len)] = '\0';         \
     } while (0)
+
+
+static inline void httpp_span_init(httpp_span_t* span) 
+{
+    span->ptr = NULL;
+    span->length = 0;
+    span->is_owned = false;
+}
+
+static inline void httpp_req_init(
+    httpp_req_t* dest, httpp_header_t* headers_arr, size_t headers_cap)
+{
+    httpp_span_init(&dest->route);
+    httpp_span_init(&dest->body);
+
+    dest->headers.arr = headers_arr;
+    dest->headers.capacity = headers_cap;
+    dest->headers.length = 0;
+}
+
+static inline void httpp_res_init(
+    httpp_res_t* dest, httpp_header_t* headers_arr, size_t headers_cap, int status)
+{
+    dest->code = status;
+    dest->headers.arr = headers_arr;
+    dest->headers.capacity = headers_cap;
+    dest->headers.length = 0;
+}
 
 static char* __strdup(const char* str) 
 {
@@ -277,8 +280,8 @@ const char* httpp_method_to_string(int method)
         case HTTPP_METHOD_TRACE:    return "TRACE";
         case HTTPP_METHOD_PATCH:    return "PATCH";
 
-        case HTTPP_METHOD_UNKNOWN:
-        default:                    return "UNKNOWN";
+        case HTTPP_METHOD_UNKNOWN:  
+        default: return "UNKNOWN";
     }
 }
 
@@ -402,17 +405,17 @@ bool httpp_span_case_eq(httpp_span_t* span, const char* to)
 
 httpp_header_t* httpp_headers_arr_append(httpp_headers_arr_t* hs, httpp_header_t header)
 {
-    if (hs->length >= hs->capacity)
-        return NULL; // Array is full
-
     if (!header.name.ptr || !header.value.ptr) 
         return NULL; // Value is empty
+    
+    if (hs->length >= hs->capacity)
+        return NULL;
 
     hs->arr[hs->length++] = header;
     return &hs->arr[hs->length - 1];
 }
 
-httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name)
+httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, const char* name)
 {
     // For the sake of simplicity and minimalism, it's just a for loop. No hash table here.
     size_t name_len = strlen(name);
@@ -430,8 +433,7 @@ httpp_header_t* httpp_headers_arr_find(httpp_headers_arr_t* hs, char* name)
     return NULL;
 }
 
-
-httpp_header_t* httpp_res_add_header(httpp_res_t* res, char* name, char* value)
+httpp_header_t* httpp_res_add_header(httpp_res_t* res, const char* name, const char* value)
 {
     if (!name || !value) 
         return NULL;
@@ -472,7 +474,7 @@ void httpp_res_free_added(httpp_res_t* res)
     }
 }
 
-static inline char* chop(char until, httpp_span_t* to, char* from, size_t from_len) 
+static inline char* __chop(char until, httpp_span_t* to, char* from, size_t from_len) 
 {
     to->ptr = from;
     char* delim = (char*) memchr(from, until, from_len);
@@ -503,10 +505,10 @@ int httpp_parse_start_line(char* buf, size_t n, httpp_req_t* dest)
     SETSTR(method_buf, itr, delim - itr);
     itr = delim + 1;
 
-    if ((itr = chop(' ', &route, itr, n - (itr - buf))) == NULL)
+    if ((itr = __chop(' ', &route, itr, n - (itr - buf))) == NULL)
         return -1;
     
-    if ((itr = chop('\r', &version, itr, n - (itr - buf))) == NULL)
+    if ((itr = __chop('\r', &version, itr, n - (itr - buf))) == NULL)
         return -1;
     
     if (itr >= buf + n)

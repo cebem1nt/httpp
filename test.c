@@ -119,11 +119,10 @@ void test_invalid_start_line()
 void test_response_builder()
 {
     TEST("Response builder and formatting") {
-        HTTPP_NEW_RES(res, 10);
+        HTTPP_NEW_RES(res, 10, 200);
         char* body = "Hello!";
         size_t raw_len;
 
-        res.code = 200;
         httpp_res_add_header(&res, "Content-Type", "text/plain");
         httpp_res_set_body(res, body, strlen(body));
         char* raw = httpp_res_to_raw(&res, &raw_len);

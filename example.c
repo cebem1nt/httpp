@@ -18,7 +18,7 @@ int main()
 {
     httpp_req_t parsed;
     httpp_header_t headers[HTTPP_DEFAULT_HEADERS_ARR_CAP]; // Array for parsed headers
-    httpp_init_req(&parsed, headers, HTTPP_DEFAULT_HEADERS_ARR_CAP); // Initialize the request on stack
+    httpp_req_init(&parsed, headers, HTTPP_DEFAULT_HEADERS_ARR_CAP); // Initialize the request on stack
     // Alternatively, use this fancy macro:
     // HTTPP_NEW_REQ(parsed, HTTPP_DEFAULT_HEADERS_ARR_CAP);
 
@@ -42,9 +42,8 @@ int main()
 
     httpp_res_t response;
     httpp_header_t response_headers[2]; 
-    httpp_init_res(&response, response_headers, 2);
+    httpp_res_init(&response, response_headers, 2, 200); // 200 is the status code -> OK
 
-    response.code = 200;
     httpp_res_add_header(&response, "Host", "somehost.some.where");
     httpp_header_t* status = httpp_res_add_header(&response, "Status", "ok");
     // If you try to add more headers than the capacity is, httpp_add_header will return NULL
